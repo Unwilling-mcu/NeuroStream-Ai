@@ -1,56 +1,117 @@
-*, *::before, *::after {
-  box-sizing: border-box;
+:root {
+  --red: #e50914;
+  --red-dim: rgba(229, 9, 20, 0.15);
+  --red-glow: rgba(229, 9, 20, 0.4);
+  --bg: #080808;
+  --bg2: #111;
+  --bg3: #1a1a1a;
+  --border: rgba(255, 255, 255, 0.07);
+  --text: #fff;
+  --text2: #aaa;
+  --text3: #555;
+  --green: #3ddc84;
+  --gold: #f5a623;
 }
 
+*, *::before, *::after { box-sizing: border-box; }
+
 html, body, #root {
-  margin: 0;
-  padding: 0;
-  height: 100%;
-  overflow: hidden;
+  margin: 0; padding: 0;
+  height: 100%; overflow: hidden;
 }
 
 body {
-  font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
-  background: #0a0a0a;
-  color: #fff;
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  background: var(--bg);
+  color: var(--text);
   -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
 }
 
-/* Scrollbar */
-::-webkit-scrollbar { width: 6px; height: 6px; }
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.22); }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
 
-/* Range inputs */
-input[type=range] {
-  -webkit-appearance: none;
-  background: transparent;
-}
-input[type=range]::-webkit-slider-runnable-track {
-  height: 4px;
-  border-radius: 2px;
-  background: rgba(255,255,255,0.15);
-}
-input[type=range]::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  width: 14px; height: 14px;
-  border-radius: 50%;
-  background: #fff;
-  margin-top: -5px;
-  cursor: pointer;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.5);
-}
+/* ── Range inputs ── */
+input[type=range] { -webkit-appearance: none; background: transparent; cursor: pointer; }
+input[type=range]::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background: rgba(255,255,255,0.12); }
+input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; background: #fff; margin-top: -5px; box-shadow: 0 1px 6px rgba(0,0,0,0.6); }
 
-/* Video select dropdown */
-select option {
-  background: #1a1a1a;
-  color: #fff;
-}
+/* ── Select ── */
+select option { background: #1a1a1a; color: #fff; }
 
-/* Voice pulse animation */
+/* ── Animations ── */
 @keyframes pulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(229,9,20,0.4); }
-  50% { box-shadow: 0 0 0 8px rgba(229,9,20,0); }
+  0%, 100% { box-shadow: 0 0 0 0 var(--red-glow); }
+  50%       { box-shadow: 0 0 0 8px rgba(229,9,20,0); }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideInLeft {
+  from { opacity: 0; transform: translateX(-16px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes shimmer {
+  0%   { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.95); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── Skeleton loader ── */
+.skeleton {
+  background: linear-gradient(90deg, #1a1a1a 25%, #222 50%, #1a1a1a 75%);
+  background-size: 400px 100%;
+  animation: shimmer 1.4s infinite;
+  border-radius: 6px;
+}
+
+/* ── Drag-over highlight ── */
+.drag-over {
+  outline: 2px dashed var(--red) !important;
+  background: var(--red-dim) !important;
+}
+
+/* ── Tooltip ── */
+[title]:hover::after {
+  content: attr(title);
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0,0,0,0.9);
+  color: #fff;
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 5px;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 9999;
+}
+
+/* ── Page animation ── */
+.page-enter {
+  animation: fadeIn 0.22s ease;
+}
+
+/* ── Card hover lift ── */
+.card-hover {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.card-hover:hover {
+  transform: translateY(-4px) scale(1.025);
+  box-shadow: 0 20px 48px rgba(0,0,0,0.7);
 }
