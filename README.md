@@ -299,7 +299,7 @@ Distributed under the MIT License. See `LICENSE` for more information.
 
 ## 👨‍💻 Author
 
-**Riju** — [@Unwilling-mcu](https://github.com/Unwilling-mcu)
+**Sanchayan** — [@Unwilling-mcu](https://github.com/Unwilling-mcu)
 
 > *Built as a showcase of full-stack desktop application engineering, combining modern web technologies with native desktop capabilities and AI-powered features.*
 
