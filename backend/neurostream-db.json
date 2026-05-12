@@ -1,0 +1,71 @@
+{
+  "history": [
+    {
+      "id": 1776924735605,
+      "title": "E",
+      "file_path": "C:\\Users\\KIIT0001\\Downloads\\Telegram Desktop\\E.mp4",
+      "progress": 6475,
+      "duration": 10587,
+      "last_watched": 1778580960347,
+      "watch_count": 208
+    },
+    {
+      "id": 1776926312485,
+      "title": "Screen Recording 2025-12-14 230949",
+      "file_path": "C:\\Users\\KIIT0001\\Videos\\Screen Recordings\\Screen Recording 2025-12-14 230949.mp4",
+      "progress": 55,
+      "duration": 177,
+      "last_watched": 1778580827456,
+      "watch_count": 159
+    }
+  ],
+  "library": [
+    {
+      "id": 0,
+      "title": "E",
+      "filename": "E.mp4",
+      "file_path": "C:\\Users\\KIIT0001\\Downloads\\Telegram Desktop\\E.mp4",
+      "folder_path": "C:\\Users\\KIIT0001\\Downloads\\Telegram Desktop",
+      "url": "http://localhost:5000/api/stream/E.mp4?folder=C%3A%5CUsers%5CKIIT0001%5CDownloads%5CTelegram%20Desktop",
+      "thumbnail": null,
+      "duration": 10587.32,
+      "size": 1389722227,
+      "resolution": "1280x640",
+      "fps": "25.0",
+      "codec": "hevc",
+      "added_at": 1777226827830
+    },
+    {
+      "id": 10013,
+      "title": "Man Chala",
+      "filename": "Saahel - Man Chala.flac",
+      "file_path": "C:\\Users\\KIIT0001\\Downloads\\Telegram Desktop\\Saahel - Man Chala.flac",
+      "folder_path": "C:\\Users\\KIIT0001\\Downloads\\Telegram Desktop",
+      "url": "http://localhost:5000/api/stream/Saahel%20-%20Man%20Chala.flac?folder=C%3A%5CUsers%5CKIIT0001%5CDownloads%5CTelegram%20Desktop",
+      "albumArt": "http://localhost:5000/api/album-art/QzpcVXNlcnNcS0lJVDAwMDFcRG93bmxvYWRzXFRl.jpg",
+      "isAudio": true,
+      "artist": "Saahel",
+      "album": "Man Chala",
+      "duration": 179.20356,
+      "size": 19721818,
+      "hasEmbeddedArt": true,
+      "added_at": 1777518252878
+    },
+    {
+      "id": 10014,
+      "title": "Lutt Le Gaya",
+      "filename": "Shashwat Sachdev - Lutt Le Gaya.flac",
+      "file_path": "C:\\Users\\KIIT0001\\Downloads\\Telegram Desktop\\Shashwat Sachdev - Lutt Le Gaya.flac",
+      "folder_path": "C:\\Users\\KIIT0001\\Downloads\\Telegram Desktop",
+      "url": "http://localhost:5000/api/stream/Shashwat%20Sachdev%20-%20Lutt%20Le%20Gaya.flac?folder=C%3A%5CUsers%5CKIIT0001%5CDownloads%5CTelegram%20Desktop",
+      "albumArt": "http://localhost:5000/api/album-art/QzpcVXNlcnNcS0lJVDAwMDFcRG93bmxvYWRzXFRl.jpg",
+      "isAudio": true,
+      "artist": "Shashwat Sachdev, Simran Chaudhary",
+      "album": "Dhurandhar (Original Motion Picture Soundtrack)",
+      "duration": 253.893061,
+      "size": 31773835,
+      "hasEmbeddedArt": true,
+      "added_at": 1777518252878
+    }
+  ]
+}

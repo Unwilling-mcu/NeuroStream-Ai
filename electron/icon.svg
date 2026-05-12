@@ -1,0 +1,48 @@
+<svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" width="512" height="512">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="45%" r="55%">
+      <stop offset="0%" stop-color="#1a0a0a"/>
+      <stop offset="100%" stop-color="#050505"/>
+    </radialGradient>
+    <radialGradient id="glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#e50914" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="#e50914" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="nodeGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#ff6b35" stop-opacity="0.9"/>
+      <stop offset="100%" stop-color="#e50914" stop-opacity="0.6"/>
+    </radialGradient>
+    <filter id="crisp"><feGaussianBlur stdDeviation="2"/></filter>
+  </defs>
+  <rect x="0" y="0" width="512" height="512" rx="112" ry="112" fill="url(#bg)"/>
+  <ellipse cx="256" cy="240" rx="200" ry="180" fill="url(#glow)" filter="url(#crisp)"/>
+  <line x1="256" y1="108" x2="140" y2="195" stroke="#e50914" stroke-width="1.2" stroke-opacity="0.25"/>
+  <line x1="256" y1="108" x2="372" y2="195" stroke="#e50914" stroke-width="1.2" stroke-opacity="0.25"/>
+  <line x1="140" y1="195" x2="140" y2="330" stroke="#e50914" stroke-width="1.2" stroke-opacity="0.18"/>
+  <line x1="372" y1="195" x2="372" y2="330" stroke="#e50914" stroke-width="1.2" stroke-opacity="0.18"/>
+  <line x1="140" y1="330" x2="256" y2="400" stroke="#e50914" stroke-width="1.2" stroke-opacity="0.25"/>
+  <line x1="372" y1="330" x2="256" y2="400" stroke="#e50914" stroke-width="1.2" stroke-opacity="0.25"/>
+  <line x1="140" y1="195" x2="372" y2="330" stroke="#ff4500" stroke-width="0.8" stroke-opacity="0.15"/>
+  <line x1="372" y1="195" x2="140" y2="330" stroke="#ff4500" stroke-width="0.8" stroke-opacity="0.15"/>
+  <line x1="90" y1="150" x2="140" y2="195" stroke="#e50914" stroke-width="0.8" stroke-opacity="0.2"/>
+  <line x1="422" y1="150" x2="372" y2="195" stroke="#e50914" stroke-width="0.8" stroke-opacity="0.2"/>
+  <line x1="90" y1="370" x2="140" y2="330" stroke="#e50914" stroke-width="0.8" stroke-opacity="0.2"/>
+  <line x1="422" y1="370" x2="372" y2="330" stroke="#e50914" stroke-width="0.8" stroke-opacity="0.2"/>
+  <rect x="148" y="155" width="52" height="202" rx="8" fill="#e50914"/>
+  <rect x="312" y="155" width="52" height="202" rx="8" fill="#e50914"/>
+  <polygon points="200,155 264,155 364,357 312,357" fill="#e50914"/>
+  <rect x="148" y="155" width="52" height="18" rx="8" fill="#ff6b35" opacity="0.6"/>
+  <rect x="312" y="155" width="52" height="18" rx="8" fill="#ff6b35" opacity="0.6"/>
+  <circle cx="256" cy="108" r="9" fill="url(#nodeGlow)"/><circle cx="256" cy="108" r="5" fill="#fff" opacity="0.9"/>
+  <circle cx="140" cy="195" r="7" fill="url(#nodeGlow)"/><circle cx="140" cy="195" r="3.5" fill="#fff" opacity="0.8"/>
+  <circle cx="372" cy="195" r="7" fill="url(#nodeGlow)"/><circle cx="372" cy="195" r="3.5" fill="#fff" opacity="0.8"/>
+  <circle cx="140" cy="330" r="7" fill="url(#nodeGlow)"/><circle cx="140" cy="330" r="3.5" fill="#fff" opacity="0.8"/>
+  <circle cx="372" cy="330" r="7" fill="url(#nodeGlow)"/><circle cx="372" cy="330" r="3.5" fill="#fff" opacity="0.8"/>
+  <circle cx="256" cy="400" r="9" fill="url(#nodeGlow)"/><circle cx="256" cy="400" r="5" fill="#fff" opacity="0.9"/>
+  <circle cx="90" cy="150" r="5" fill="#e50914" opacity="0.5"/>
+  <circle cx="422" cy="150" r="5" fill="#e50914" opacity="0.5"/>
+  <circle cx="90" cy="370" r="5" fill="#e50914" opacity="0.5"/>
+  <circle cx="422" cy="370" r="5" fill="#e50914" opacity="0.5"/>
+  <rect x="1" y="1" width="510" height="510" rx="111" ry="111" fill="none" stroke="#e50914" stroke-width="1.5" stroke-opacity="0.3"/>
+  <rect x="16" y="16" width="480" height="480" rx="100" ry="100" fill="none" stroke="#e50914" stroke-width="0.8" stroke-opacity="0.12"/>
+</svg>

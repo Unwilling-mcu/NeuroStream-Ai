@@ -1,0 +1,172 @@
+/* ── Theme variables ── */
+:root {
+  --red: #e50914;
+  --red-dim: rgba(229, 9, 20, 0.15);
+  --red-glow: rgba(229, 9, 20, 0.4);
+  --bg: #080808;
+  --bg2: #111;
+  --bg3: #1a1a1a;
+  --border: rgba(255, 255, 255, 0.07);
+  --text: #fff;
+  --text2: #aaa;
+  --text3: #555;
+  --green: #3ddc84;
+  --gold: #f5a623;
+  --panel-bg: rgba(10, 10, 10, 0.92);
+  --panel-blur: blur(24px);
+  --panel-border: rgba(255, 255, 255, 0.09);
+}
+
+/* ── Theme: AMOLED Black ── */
+[data-theme="amoled"] {
+  --bg: #000000;
+  --bg2: #0a0a0a;
+  --bg3: #111111;
+  --border: rgba(255, 255, 255, 0.05);
+  --panel-bg: rgba(0, 0, 0, 0.96);
+}
+
+/* ── Theme: Navy Blue ── */
+[data-theme="navy"] {
+  --red: #4a9eff;
+  --red-dim: rgba(74, 158, 255, 0.15);
+  --red-glow: rgba(74, 158, 255, 0.4);
+  --bg: #060d1a;
+  --bg2: #0d1b2e;
+  --bg3: #162238;
+  --border: rgba(74, 158, 255, 0.12);
+  --panel-bg: rgba(6, 13, 26, 0.92);
+}
+
+/* ── Theme: Forest Green ── */
+[data-theme="forest"] {
+  --red: #2ecc71;
+  --red-dim: rgba(46, 204, 113, 0.15);
+  --red-glow: rgba(46, 204, 113, 0.4);
+  --bg: #060f08;
+  --bg2: #0d1f11;
+  --bg3: #152a19;
+  --border: rgba(46, 204, 113, 0.1);
+  --panel-bg: rgba(6, 15, 8, 0.92);
+}
+
+/* ── Theme: Midnight Purple ── */
+[data-theme="purple"] {
+  --red: #a855f7;
+  --red-dim: rgba(168, 85, 247, 0.15);
+  --red-glow: rgba(168, 85, 247, 0.4);
+  --bg: #080612;
+  --bg2: #110d1e;
+  --bg3: #1a1530;
+  --border: rgba(168, 85, 247, 0.1);
+  --panel-bg: rgba(8, 6, 18, 0.92);
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body, #root {
+  margin: 0; padding: 0;
+  height: 100%; overflow: hidden;
+}
+
+body {
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  transition: background 0.3s, color 0.3s;
+}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
+
+/* ── Range inputs ── */
+input[type=range] { -webkit-appearance: none; background: transparent; cursor: pointer; }
+input[type=range]::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background: rgba(255,255,255,0.12); }
+input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; background: #fff; margin-top: -5px; box-shadow: 0 1px 6px rgba(0,0,0,0.6); }
+
+/* ── Select ── */
+select option { background: #1a1a1a; color: #fff; }
+
+/* ── Glassmorphism panels (#10) ── */
+.glass-panel {
+  background: var(--panel-bg) !important;
+  backdrop-filter: var(--panel-blur) !important;
+  -webkit-backdrop-filter: var(--panel-blur) !important;
+  border: 1px solid var(--panel-border) !important;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.05) !important;
+}
+
+/* ── Animations ── */
+@keyframes pulse {
+  0%, 100% { box-shadow: 0 0 0 0 var(--red-glow); }
+  50%       { box-shadow: 0 0 0 8px rgba(229,9,20,0); }
+}
+
+/* ── #9 Logo glow animation ── */
+@keyframes logoGlow {
+  0%, 100% { box-shadow: 0 4px 16px var(--red-glow); }
+  50%       { box-shadow: 0 4px 28px var(--red-glow), 0 0 40px var(--red-dim); }
+}
+.logo-glow {
+  animation: logoGlow 3s ease-in-out infinite;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideInLeft {
+  from { opacity: 0; transform: translateX(-16px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes shimmer {
+  0%   { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.95); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── Skeleton loader ── */
+.skeleton {
+  background: linear-gradient(90deg, #1a1a1a 25%, #242424 50%, #1a1a1a 75%);
+  background-size: 400px 100%;
+  animation: shimmer 1.4s infinite;
+  border-radius: 6px;
+}
+
+/* ── Card hover lift ── */
+.card-hover {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.card-hover:hover {
+  transform: translateY(-4px) scale(1.025);
+  box-shadow: 0 20px 48px rgba(0,0,0,0.7);
+}
+
+/* ── Subtitle style (#7) ── */
+video::cue {
+  background: rgba(0, 0, 0, 0.75);
+  color: #fff;
+  font-size: 1.1em;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  border-radius: 4px;
+  padding: 2px 6px;
+}
