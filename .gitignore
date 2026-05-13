@@ -1,0 +1,17 @@
+# 1. Create .gitignore
+@"
+node_modules/
+media/
+backend/thumbnails/
+backend/album-art/
+backend/neurostream-db.json
+electron/dist-build/
+frontend/dist/
+*.mp4
+*.mkv
+*.avi
+*.mp3
+*.flac
+*.exe
+*.dmg
+"@ | Out-File -FilePath .gitignore -Encoding utf8
