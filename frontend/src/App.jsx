@@ -11,6 +11,7 @@ import Equalizer, { connectAudioElement, setEQPreset } from "./components/Equali
 import AudioVisualizer from "./components/AudioVisualizer";
 import SleepTimer from "./components/SleepTimer";
 import VideoBookmarks from "./components/VideoBookmarks";
+import SpotifyPage from "./components/SpotifyPage";
 import { LoopMode, RecentFiles, VideoNotes, LyricsPanel, addToRecent, getRecent } from "./components/MediaUtils";
 
 // ─── Helpers ──────────────────────────────────────────────────────
@@ -727,6 +728,8 @@ export default function App() {
       case "home":     return <HomePage onQueue={addToQueue} sortBy={sortBy} sortDir={sortDir} onURLOpen={()=>setShowNetworkURL(true)} onRemoveVideo={removeVideo} onPlayNext={playNext} onPlayAudio={playAudio}/>;
       case "videos":   return <VideosPage onQueue={addToQueue} sortBy={sortBy} sortDir={sortDir} onRemove={removeVideo}/>;
       case "audio":    return <AudioPage onPlayAudio={playAudio}/>;
+      case "together": return <div style={{flex:1,overflowY:"auto",padding:"24px 28px"}}><WatchTogether currentVideo={currentVideo} onClose={()=>setPage("home")}/></div>;
+      case "spotify":  return <SpotifyPage/>;
       case "history":  return <HistoryPage/>;
       case "settings": return <SettingsPage/>;
       default:         return <HomePage onQueue={addToQueue} sortBy={sortBy} sortDir={sortDir} onURLOpen={()=>setShowNetworkURL(true)} onRemoveVideo={removeVideo} onPlayNext={playNext} onPlayAudio={playAudio}/>;

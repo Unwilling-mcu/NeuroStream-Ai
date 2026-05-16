@@ -1,11 +1,13 @@
 import { useAppStore } from "../store/useAppStore";
 
 const NAV = [
-  { id: "home",     icon: "⬡",  label: "Home" },
-  { id: "videos",   icon: "🎬", label: "Videos" },
-  { id: "audio",    icon: "🎵", label: "Audio" },
-  { id: "history",  icon: "⏱",  label: "Continue" },
-  { id: "settings", icon: "◈",  label: "Settings" },
+  { id: "home",         icon: "⬡",  label: "Home" },
+  { id: "videos",       icon: "🎬", label: "Videos" },
+  { id: "audio",        icon: "🎵", label: "Audio" },
+  { id: "together",     icon: "👥", label: "Watch Together" },
+  { id: "spotify",      icon: "🟢", label: "Spotify" },
+  { id: "history",      icon: "⏱",  label: "Continue" },
+  { id: "settings",     icon: "◈",  label: "Settings" },
 ];
 
 export default function Sidebar() {
