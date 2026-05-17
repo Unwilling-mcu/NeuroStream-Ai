@@ -73,6 +73,20 @@ export const useAppStore = create(
       isMuted: false,
       voiceActive: false,
 
+      // ── YouTube Music persistent player state ──────────────────
+      ytTrack:     null,
+      ytStreamUrl: null,
+      ytPlaying:   false,
+      ytQueue:     [],
+      ytQueueIdx:  -1,
+
+      setYtTrack:     (t)    => set({ ytTrack: t }),
+      setYtStreamUrl: (url)  => set({ ytStreamUrl: url }),
+      setYtPlaying:   (v)    => set({ ytPlaying: v }),
+      setYtQueue:     (q, i) => set({ ytQueue: q, ytQueueIdx: i }),
+      setYtQueueIdx:  (i)    => set({ ytQueueIdx: i }),
+
+
       // ── Setters ────────────────────────────────────────────────
       setPage:             (page) => set({ currentPage: page }),
       setCurrentVideo:     (v)    => set({ currentVideo: v }),

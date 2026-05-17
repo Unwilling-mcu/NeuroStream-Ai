@@ -49,6 +49,25 @@ function createMainWindow() {
       webSecurity: false,
     },
   });
+  // ── Spotify PKCE callback interceptor ─────────────────────────────
+  // When Spotify redirects to http://127.0.0.1:5173/callback?code=...
+  // Electron tries to load that URL as a new page → ERR_CONNECTION_REFUSED
+  // → black screen. We intercept it BEFORE navigation happens, extract
+  // the code (or error), and redirect back to the running Vite app at
+  // localhost:5173 with the params appended as a query string.
+  mainWindow.webContents.on("will-navigate", (event, url) => {
+    try {
+      const parsed = new URL(url);
+      if (parsed.pathname === "/callback" && (parsed.searchParams.has("code") || parsed.searchParams.has("error"))) {
+        event.preventDefault();                         // stop Electron loading /callback
+        const returnTo = `http://localhost:5173/?${parsed.searchParams.toString()}`;
+        mainWindow.loadURL(returnTo);                   // send back to Vite with ?code=
+      }
+    } catch (_) {
+      // not a valid URL — ignore
+    }
+  });
+
   mainWindow.loadURL("http://localhost:5173");
 }
 

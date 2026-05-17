@@ -5,7 +5,7 @@ const NAV = [
   { id: "videos",       icon: "🎬", label: "Videos" },
   { id: "audio",        icon: "🎵", label: "Audio" },
   { id: "together",     icon: "👥", label: "Watch Together" },
-  { id: "spotify",      icon: "🟢", label: "Spotify" },
+  { id: "youtube",      icon: "▶",  label: "YouTube Music" },
   { id: "history",      icon: "⏱",  label: "Continue" },
   { id: "settings",     icon: "◈",  label: "Settings" },
 ];

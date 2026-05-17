@@ -71,7 +71,9 @@ export default function VideoCard({ video, isActive, onClick, onQueue, onRemove,
       previewRef.current.pause();
       previewRef.current.currentTime = 0;
     }
-    setContextMenu(null);
+    // Don't close context menu on mouse leave — it's fixed-positioned outside
+    // the card so moving toward it would trigger a leave event. Menu closes
+    // only via outside click (handled in the useEffect above).
   };
 
   return (
@@ -83,8 +85,11 @@ export default function VideoCard({ video, isActive, onClick, onQueue, onRemove,
         onMouseLeave={handleMouseLeave}
         onContextMenu={e => {
           e.preventDefault();
-          const r = cardRef.current.getBoundingClientRect();
-          setContextMenu({ x: e.clientX - r.left, y: e.clientY - r.top });
+          e.stopPropagation();
+          const menuW = 190, menuH = 185;
+          const x = e.clientX + menuW > window.innerWidth  ? e.clientX - menuW : e.clientX + 4;
+          const y = e.clientY + menuH > window.innerHeight ? e.clientY - menuH : e.clientY + 4;
+          setContextMenu({ x, y });
         }}
         style={{
           cursor: "pointer",
@@ -244,11 +249,13 @@ export default function VideoCard({ video, isActive, onClick, onQueue, onRemove,
           <div
             onClick={e => e.stopPropagation()}
             style={{
-              position: "absolute", top: contextMenu.y, left: contextMenu.x,
+              position: "fixed",
+              top:  contextMenu.y,
+              left: contextMenu.x,
               background: "rgba(14,14,14,0.98)",
               border: "1px solid rgba(255,255,255,0.1)",
               borderRadius: "10px", padding: "6px",
-              zIndex: 999, minWidth: "180px",
+              zIndex: 9999, minWidth: "180px",
               boxShadow: "0 12px 40px rgba(0,0,0,0.9)",
               backdropFilter: "blur(20px)",
             }}

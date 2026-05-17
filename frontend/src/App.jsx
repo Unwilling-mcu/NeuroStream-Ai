@@ -11,7 +11,8 @@ import Equalizer, { connectAudioElement, setEQPreset } from "./components/Equali
 import AudioVisualizer from "./components/AudioVisualizer";
 import SleepTimer from "./components/SleepTimer";
 import VideoBookmarks from "./components/VideoBookmarks";
-import SpotifyPage from "./components/SpotifyPage";
+import YoutubePage from "./components/YoutubePage";
+import YoutubeMiniPlayer from "./components/YoutubeMiniPlayer";
 import { LoopMode, RecentFiles, VideoNotes, LyricsPanel, addToRecent, getRecent } from "./components/MediaUtils";
 
 // ─── Helpers ──────────────────────────────────────────────────────
@@ -729,14 +730,15 @@ export default function App() {
       case "videos":   return <VideosPage onQueue={addToQueue} sortBy={sortBy} sortDir={sortDir} onRemove={removeVideo}/>;
       case "audio":    return <AudioPage onPlayAudio={playAudio}/>;
       case "together": return <div style={{flex:1,overflowY:"auto",padding:"24px 28px"}}><WatchTogether currentVideo={currentVideo} onClose={()=>setPage("home")}/></div>;
-      case "spotify":  return <SpotifyPage/>;
+      case "youtube":  return <YoutubePage/>;
       case "history":  return <HistoryPage/>;
       case "settings": return <SettingsPage/>;
       default:         return <HomePage onQueue={addToQueue} sortBy={sortBy} sortDir={sortDir} onURLOpen={()=>setShowNetworkURL(true)} onRemoveVideo={removeVideo} onPlayNext={playNext} onPlayAudio={playAudio}/>;
     }
   };
 
-  const bottomOffset = showMini||showAudioPlayer ? "90px" : "28px";
+  const showYtPlayer = !!useAppStore.getState().ytTrack;
+  const bottomOffset = showMini || showAudioPlayer ? (showYtPlayer ? "170px" : "90px") : (showYtPlayer ? "90px" : "28px");
 
   return (
     <div onDragOver={e=>{e.preventDefault();setIsDragOver(true);}} onDragLeave={()=>setIsDragOver(false)} onDrop={handleDrop}
@@ -817,6 +819,7 @@ export default function App() {
         </SidePanel>
       )}
 
+      <YoutubeMiniPlayer/>
       {showNetworkURL&&<NetworkURLPlayer onClose={()=>setShowNetworkURL(false)}/>}
       {toast&&<Toast message={toast} onDone={()=>setToast(null)}/>}
       {showShortcuts&&<ShortcutsOverlay onClose={()=>setShowShortcuts(false)}/>}

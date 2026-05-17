@@ -486,6 +486,121 @@ app.get("/api/search", (req, res) => {
   res.json(db.library.filter(v => v.title.toLowerCase().includes(q)).slice(0, 50));
 });
 
+// ─── YouTube Music via yt-dlp ──────────────────────────────────────
+// Finds yt-dlp on PATH or common install locations
+function getYtDlp() {
+  const candidates = ["yt-dlp", "yt-dlp.exe",
+    path.join(process.env.LOCALAPPDATA || "", "Programs", "Python", "Python311", "Scripts", "yt-dlp.exe"),
+    path.join(process.env.APPDATA || "", "Python", "Scripts", "yt-dlp.exe"),
+    "/usr/local/bin/yt-dlp", "/usr/bin/yt-dlp",
+  ];
+  for (const c of candidates) {
+    try { execSync(`"${c}" --version`, { stdio: "pipe", timeout: 4000 }); return c; } catch {}
+  }
+  return null;
+}
+
+function ytDlpSearch(ytdlp, query, maxResults = 20) {
+  // ytsearch20: returns top 20 results in JSON
+  const raw = execFileSync(ytdlp, [
+    `ytsearch${maxResults}:${query}`,
+    "--dump-json", "--flat-playlist", "--no-warnings",
+    "--extractor-args", "youtube:skip=dash",
+    "--match-filter", "duration < 600",   // skip anything over 10 min (likely not a song)
+  ], { timeout: 30000, maxBuffer: 10 * 1024 * 1024 });
+
+  return raw.toString().trim().split("\n")
+    .map(line => { try { return JSON.parse(line); } catch { return null; } })
+    .filter(Boolean)
+    .map(v => ({
+      id:        v.id,
+      title:     v.title,
+      channel:   v.channel || v.uploader || "",
+      duration:  v.duration || 0,
+      thumbnail: v.thumbnail || (v.thumbnails?.[0]?.url) || null,
+      views:     v.view_count ? Intl.NumberFormat("en", { notation: "compact" }).format(v.view_count) : null,
+    }));
+}
+
+// GET /api/yt/search?q=<query>
+app.get("/api/yt/search", (req, res) => {
+  const q = (req.query.q || "").trim();
+  if (!q) return res.status(400).json({ error: "q is required" });
+
+  const ytdlp = getYtDlp();
+  if (!ytdlp) return res.status(503).json({ error: "yt-dlp not found. Install it: pip install yt-dlp" });
+
+  try {
+    const tracks = ytDlpSearch(ytdlp, `${q} audio`, 20);
+    res.json({ tracks });
+  } catch (e) {
+    console.error("yt search error:", e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/yt/trending  — top music tracks right now
+app.get("/api/yt/trending", (req, res) => {
+  const ytdlp = getYtDlp();
+  if (!ytdlp) return res.status(503).json({ error: "yt-dlp not found. Install it: pip install yt-dlp" });
+
+  try {
+    // Use a well-known music chart playlist as "trending"
+    const raw = execFileSync(ytdlp, [
+      "https://www.youtube.com/playlist?list=PLFgquLnL59alCl_2TQvOiD5Vgm1hCaGSI", // YouTube Music Top Hits
+      "--dump-json", "--flat-playlist", "--no-warnings", "--playlist-end", "30",
+    ], { timeout: 30000, maxBuffer: 10 * 1024 * 1024 });
+
+    const tracks = raw.toString().trim().split("\n")
+      .map(line => { try { return JSON.parse(line); } catch { return null; } })
+      .filter(Boolean)
+      .map(v => ({
+        id:        v.id,
+        title:     v.title,
+        channel:   v.channel || v.uploader || "",
+        duration:  v.duration || 0,
+        thumbnail: v.thumbnail || (v.thumbnails?.[0]?.url) || null,
+        views:     v.view_count ? Intl.NumberFormat("en", { notation: "compact" }).format(v.view_count) : null,
+      }));
+    res.json({ tracks });
+  } catch (e) {
+    // Fallback: search for "top hits 2025" if playlist fails
+    try {
+      const tracks = ytDlpSearch(ytdlp, "top music hits 2025 official", 25);
+      res.json({ tracks });
+    } catch (e2) {
+      res.status(500).json({ error: e2.message });
+    }
+  }
+});
+
+// GET /api/yt/stream-url?id=<videoId>
+// Returns the best audio-only stream URL yt-dlp can find (no download needed)
+app.get("/api/yt/stream-url", (req, res) => {
+  const id = (req.query.id || "").trim();
+  if (!id) return res.status(400).json({ error: "id is required" });
+
+  const ytdlp = getYtDlp();
+  if (!ytdlp) return res.status(503).json({ error: "yt-dlp not found" });
+
+  try {
+    // -f bestaudio picks the best audio-only format (m4a/webm/opus)
+    // --get-url gives us the direct CDN URL the browser can play
+    const url = execFileSync(ytdlp, [
+      `https://www.youtube.com/watch?v=${id}`,
+      "-f", "bestaudio[ext=m4a]/bestaudio/best",
+      "--get-url", "--no-warnings",
+      "--extractor-args", "youtube:skip=dash",
+    ], { timeout: 20000 }).toString().trim().split("\n")[0];
+
+    if (!url || !url.startsWith("http")) throw new Error("No stream URL returned");
+    res.json({ url });
+  } catch (e) {
+    console.error("yt stream-url error:", e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.listen(5000, () => {
   console.log("🚀 NeuroStream backend → http://localhost:5000");
   console.log(`📁 Thumbnails → ${THUMB_DIR}`);
