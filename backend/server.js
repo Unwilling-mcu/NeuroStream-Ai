@@ -1,13 +1,9 @@
-import express from "express";
-import cors from "cors";
-import fs from "fs";
-import path from "path";
-import { fileURLToPath } from "url";
-import { execFileSync, execSync } from "child_process";
-import { createRequire } from "module";
-
-const require = createRequire(import.meta.url);
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const express = require("express");
+const cors = require("cors");
+const fs = require("fs");
+const path = require("path");
+const { execFileSync, execSync } = require("child_process");
+// __dirname is natively available in CJS
 const app = express();
 app.use(cors());
 app.use(express.json());
@@ -17,7 +13,12 @@ const THUMB_DIR = path.join(__dirname, "thumbnails");
 if (!fs.existsSync(THUMB_DIR)) fs.mkdirSync(THUMB_DIR, { recursive: true });
 
 // ─── Pure JSON DB ──────────────────────────────────────────────────
-const DB_PATH = path.join(__dirname, "neurostream-db.json");
+// In production, USER_DATA_PATH is passed by Electron main.js so the DB
+// is stored in AppData/Roaming/NeuroStream AI (writable, survives updates).
+// In dev it falls back to the backend folder itself.
+const DB_PATH = process.env.USER_DATA_PATH
+  ? path.join(process.env.USER_DATA_PATH, "neurostream-db.json")
+  : path.join(__dirname, "neurostream-db.json");
 function readDB() {
   try {
     if (!fs.existsSync(DB_PATH)) fs.writeFileSync(DB_PATH, JSON.stringify({ history: [], library: [] }, null, 2));
@@ -32,8 +33,8 @@ function writeDB(data) {
 let ffprobeExec = null;
 let ffmpegExec = null;
 try {
-  const mod = await import("ffprobe-static");
-  ffprobeExec = mod.default?.path ?? mod.path ?? null;
+  const mod = require("ffprobe-static");
+  ffprobeExec = mod?.path ?? mod?.default?.path ?? null;
   // Derive ffmpeg path from ffprobe path
   ffmpegExec = ffprobeExec?.replace("ffprobe", "ffmpeg") || null;
   // Check if ffmpeg exists
@@ -374,7 +375,7 @@ app.get("/api/proxy-stream", async (req, res) => {
   const { url } = req.query;
   if (!url) return res.status(400).send("No URL");
   try {
-    const fetch = (await import("node-fetch")).default;
+    const fetch = require("node-fetch").default || require("node-fetch");
     const headers = {};
     if (req.headers.range) headers["Range"] = req.headers.range;
     const upstream = await fetch(url, { headers });
@@ -486,27 +487,54 @@ app.get("/api/search", (req, res) => {
   res.json(db.library.filter(v => v.title.toLowerCase().includes(q)).slice(0, 50));
 });
 
+
 // ─── YouTube Music via yt-dlp ──────────────────────────────────────
-// Finds yt-dlp on PATH or common install locations
+
 function getYtDlp() {
-  const candidates = ["yt-dlp", "yt-dlp.exe",
+  const os = require("os");
+  const ext = process.platform === "win32" ? ".exe" : "";
+
+  // Priority 1: BACKEND_DIR set by main.js — most reliable in packaged app
+  // because __dirname is wrong when server.js is loaded via Module._compile
+  if (process.env.BACKEND_DIR) {
+    const p = path.join(process.env.BACKEND_DIR, "yt-dlp" + ext);
+    if (fs.existsSync(p)) return p;
+  }
+
+  // Priority 2: resourcesPath from main.js (also set as env var)
+  if (process.env.RESOURCES_PATH) {
+    const p = path.join(process.env.RESOURCES_PATH, "backend", "yt-dlp" + ext);
+    if (fs.existsSync(p)) return p;
+  }
+
+  // Priority 3: next to server.js (__dirname — works in dev)
+  const local = path.join(__dirname, "yt-dlp" + ext);
+  if (fs.existsSync(local)) return local;
+
+  // Priority 4: PATH and common pip install locations
+  const candidates = [
+    "yt-dlp",
     path.join(process.env.LOCALAPPDATA || "", "Programs", "Python", "Python311", "Scripts", "yt-dlp.exe"),
+    path.join(process.env.LOCALAPPDATA || "", "Programs", "Python", "Python312", "Scripts", "yt-dlp.exe"),
+    path.join(process.env.LOCALAPPDATA || "", "Programs", "Python", "Python313", "Scripts", "yt-dlp.exe"),
     path.join(process.env.APPDATA || "", "Python", "Scripts", "yt-dlp.exe"),
+    path.join(os.homedir(), "scoop", "shims", "yt-dlp.exe"),
     "/usr/local/bin/yt-dlp", "/usr/bin/yt-dlp",
   ];
   for (const c of candidates) {
-    try { execSync(`"${c}" --version`, { stdio: "pipe", timeout: 4000 }); return c; } catch {}
+    try {
+      require("child_process").execSync(`"${c}" --version`, { stdio: "pipe", timeout: 4000 });
+      return c;
+    } catch {}
   }
   return null;
 }
 
 function ytDlpSearch(ytdlp, query, maxResults = 20) {
-  // ytsearch20: returns top 20 results in JSON
   const raw = execFileSync(ytdlp, [
     `ytsearch${maxResults}:${query}`,
     "--dump-json", "--flat-playlist", "--no-warnings",
-    "--extractor-args", "youtube:skip=dash",
-    "--match-filter", "duration < 600",   // skip anything over 10 min (likely not a song)
+    "--match-filter", "duration < 600",
   ], { timeout: 30000, maxBuffer: 10 * 1024 * 1024 });
 
   return raw.toString().trim().split("\n")
@@ -526,10 +554,8 @@ function ytDlpSearch(ytdlp, query, maxResults = 20) {
 app.get("/api/yt/search", (req, res) => {
   const q = (req.query.q || "").trim();
   if (!q) return res.status(400).json({ error: "q is required" });
-
   const ytdlp = getYtDlp();
-  if (!ytdlp) return res.status(503).json({ error: "yt-dlp not found. Install it: pip install yt-dlp" });
-
+  if (!ytdlp) return res.status(503).json({ error: "yt-dlp not found. Install: pip install yt-dlp" });
   try {
     const tracks = ytDlpSearch(ytdlp, `${q} audio`, 20);
     res.json({ tracks });
@@ -539,15 +565,13 @@ app.get("/api/yt/search", (req, res) => {
   }
 });
 
-// GET /api/yt/trending  — top music tracks right now
+// GET /api/yt/trending
 app.get("/api/yt/trending", (req, res) => {
   const ytdlp = getYtDlp();
-  if (!ytdlp) return res.status(503).json({ error: "yt-dlp not found. Install it: pip install yt-dlp" });
-
+  if (!ytdlp) return res.status(503).json({ error: "yt-dlp not found. Install: pip install yt-dlp" });
   try {
-    // Use a well-known music chart playlist as "trending"
     const raw = execFileSync(ytdlp, [
-      "https://www.youtube.com/playlist?list=PLFgquLnL59alCl_2TQvOiD5Vgm1hCaGSI", // YouTube Music Top Hits
+      "https://www.youtube.com/playlist?list=PLFgquLnL59alCl_2TQvOiD5Vgm1hCaGSI",
       "--dump-json", "--flat-playlist", "--no-warnings", "--playlist-end", "30",
     ], { timeout: 30000, maxBuffer: 10 * 1024 * 1024 });
 
@@ -555,16 +579,15 @@ app.get("/api/yt/trending", (req, res) => {
       .map(line => { try { return JSON.parse(line); } catch { return null; } })
       .filter(Boolean)
       .map(v => ({
-        id:        v.id,
-        title:     v.title,
-        channel:   v.channel || v.uploader || "",
-        duration:  v.duration || 0,
+        id: v.id, title: v.title,
+        channel: v.channel || v.uploader || "",
+        duration: v.duration || 0,
         thumbnail: v.thumbnail || (v.thumbnails?.[0]?.url) || null,
-        views:     v.view_count ? Intl.NumberFormat("en", { notation: "compact" }).format(v.view_count) : null,
+        views: v.view_count ? Intl.NumberFormat("en", { notation: "compact" }).format(v.view_count) : null,
       }));
     res.json({ tracks });
   } catch (e) {
-    // Fallback: search for "top hits 2025" if playlist fails
+    // Fallback to search
     try {
       const tracks = ytDlpSearch(ytdlp, "top music hits 2025 official", 25);
       res.json({ tracks });
@@ -575,24 +598,17 @@ app.get("/api/yt/trending", (req, res) => {
 });
 
 // GET /api/yt/stream-url?id=<videoId>
-// Returns the best audio-only stream URL yt-dlp can find (no download needed)
 app.get("/api/yt/stream-url", (req, res) => {
   const id = (req.query.id || "").trim();
   if (!id) return res.status(400).json({ error: "id is required" });
-
   const ytdlp = getYtDlp();
   if (!ytdlp) return res.status(503).json({ error: "yt-dlp not found" });
-
   try {
-    // -f bestaudio picks the best audio-only format (m4a/webm/opus)
-    // --get-url gives us the direct CDN URL the browser can play
     const url = execFileSync(ytdlp, [
       `https://www.youtube.com/watch?v=${id}`,
       "-f", "bestaudio[ext=m4a]/bestaudio/best",
       "--get-url", "--no-warnings",
-      "--extractor-args", "youtube:skip=dash",
     ], { timeout: 20000 }).toString().trim().split("\n")[0];
-
     if (!url || !url.startsWith("http")) throw new Error("No stream URL returned");
     res.json({ url });
   } catch (e) {

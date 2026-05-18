@@ -42,6 +42,10 @@
         "filter": [
           "**/*"
         ]
+      },
+      {
+        "from": "assets/yt-dlp.exe",
+        "to": "backend/yt-dlp.exe"
       }
     ],
     "win": {
