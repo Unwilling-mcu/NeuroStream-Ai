@@ -617,7 +617,99 @@ app.get("/api/yt/stream-url", (req, res) => {
   }
 });
 
-app.listen(5000, () => {
+
+// ─── Watch Together — WebSocket Room Server ────────────────────────
+// Rooms: Map<roomId, Set<WebSocket>>
+// Each message: { type, roomId, ...payload }
+// Types: join | leave | play | pause | seek | video | ping | peers
+
+const { WebSocketServer } = require("ws");
+const rooms = new Map(); // roomId → Set of ws clients
+
+function broadcast(roomId, msg, exclude = null) {
+  const room = rooms.get(roomId);
+  if (!room) return;
+  const data = JSON.stringify(msg);
+  for (const client of room) {
+    if (client !== exclude && client.readyState === 1) {
+      client.send(data);
+    }
+  }
+}
+
+function sendPeerCount(roomId) {
+  const count = rooms.get(roomId)?.size || 0;
+  const room = rooms.get(roomId);
+  if (!room) return;
+  const data = JSON.stringify({ type: "peers", count });
+  for (const client of room) {
+    if (client.readyState === 1) client.send(data);
+  }
+}
+
+const server = app.listen(5000, () => {
   console.log("🚀 NeuroStream backend → http://localhost:5000");
-  console.log(`📁 Thumbnails → ${THUMB_DIR}`);
+  console.log("📁 Thumbnails →", THUMB_DIR);
+});
+
+const wss = new WebSocketServer({ server });
+
+wss.on("connection", (ws) => {
+  let currentRoom = null;
+
+  ws.on("message", (raw) => {
+    let msg;
+    try { msg = JSON.parse(raw); } catch { return; }
+    const { type, roomId } = msg;
+
+    if (type === "join") {
+      // Leave old room if switching
+      if (currentRoom && currentRoom !== roomId) {
+        rooms.get(currentRoom)?.delete(ws);
+        sendPeerCount(currentRoom);
+        if (rooms.get(currentRoom)?.size === 0) rooms.delete(currentRoom);
+      }
+
+      currentRoom = roomId;
+      if (!rooms.has(roomId)) rooms.set(roomId, new Set());
+      rooms.get(roomId).add(ws);
+
+      // Send current state to the newcomer if host exists
+      ws.send(JSON.stringify({ type: "joined", roomId }));
+      sendPeerCount(roomId);
+
+      // Ask host (first peer) to send current video state to new joiner
+      const room = rooms.get(roomId);
+      if (room.size > 1) {
+        const host = [...room][0];
+        if (host !== ws && host.readyState === 1) {
+          host.send(JSON.stringify({ type: "state-request" }));
+        }
+      }
+    }
+
+    else if (type === "play" || type === "pause" || type === "seek" || type === "video" || type === "state") {
+      // Relay to everyone else in the room
+      if (currentRoom) broadcast(currentRoom, msg, ws);
+    }
+
+    else if (type === "ping") {
+      ws.send(JSON.stringify({ type: "pong" }));
+    }
+  });
+
+  ws.on("close", () => {
+    if (!currentRoom) return;
+    rooms.get(currentRoom)?.delete(ws);
+    sendPeerCount(currentRoom);
+    if (rooms.get(currentRoom)?.size === 0) rooms.delete(currentRoom);
+    currentRoom = null;
+  });
+
+  ws.on("error", () => {
+    if (currentRoom) {
+      rooms.get(currentRoom)?.delete(ws);
+      sendPeerCount(currentRoom);
+    }
+  });
 });

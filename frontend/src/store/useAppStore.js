@@ -87,6 +87,25 @@ export const useAppStore = create(
       setYtQueueIdx:  (i)    => set({ ytQueueIdx: i }),
 
 
+      // ── Watch Together persistent state ────────────────────────
+      wtRoomId:    null,
+      wtJoined:    false,
+      wtPeers:     0,
+      wtIsHost:    false,
+      wtRoomVideo: null,
+      wtLog:       [],
+      wtStatus:    "idle",
+
+      setWtRoomId:    (v) => set({ wtRoomId: v }),
+      setWtJoined:    (v) => set({ wtJoined: v }),
+      setWtPeers:     (v) => set({ wtPeers: v }),
+      setWtIsHost:    (v) => set({ wtIsHost: v }),
+      setWtRoomVideo: (v) => set({ wtRoomVideo: v }),
+      setWtStatus:    (v) => set({ wtStatus: v }),
+      addWtLog:    (msg) => set(s => ({ wtLog: [...s.wtLog.slice(-8), msg] })),
+      resetWt:     ()    => set({ wtRoomId: null, wtJoined: false, wtPeers: 0, wtIsHost: false, wtRoomVideo: null, wtLog: [], wtStatus: "idle" }),
+
+
       // ── Setters ────────────────────────────────────────────────
       setPage:             (page) => set({ currentPage: page }),
       setCurrentVideo:     (v)    => set({ currentVideo: v }),

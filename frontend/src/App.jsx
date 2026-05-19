@@ -13,6 +13,7 @@ import SleepTimer from "./components/SleepTimer";
 import VideoBookmarks from "./components/VideoBookmarks";
 import YoutubePage from "./components/YoutubePage";
 import YoutubeMiniPlayer from "./components/YoutubeMiniPlayer";
+import WatchTogetherManager from "./components/WatchTogetherManager";
 import { LoopMode, RecentFiles, VideoNotes, LyricsPanel, addToRecent, getRecent } from "./components/MediaUtils";
 
 // ─── Helpers ──────────────────────────────────────────────────────
@@ -422,110 +423,253 @@ function getSavedTheme() {
 }
 
 // ── #2 Watch Together ──────────────────────────────────────────────
-function WatchTogether({ currentVideo, onClose }) {
-  const [roomId, setRoomId]   = useState("");
-  const [joined, setJoined]   = useState(false);
-  const [peers, setPeers]     = useState(1);
-  const [status, setStatus]   = useState("idle");
-  const wsRef = useRef(null);
+function WatchTogether({ onClose }) {
+  const {
+    videos,
+    wtRoomId, wtJoined, wtPeers, wtIsHost,
+    wtRoomVideo, wtLog, wtStatus,
+    setWtRoomVideo, setWtIsHost, addWtLog,
+  } = useAppStore();
+
+  const [roomInput, setRoomInput] = useState("");
+  const [copied,    setCopied]    = useState(false);
 
   const createRoom = () => {
     const id = Math.random().toString(36).slice(2,8).toUpperCase();
-    setRoomId(id); joinRoom(id);
+    setRoomInput(id);
+    setWtIsHost(true);
+    window.__wtConnect?.(id, true);
   };
 
-  const joinRoom = (id) => {
-    const rid = id || roomId;
-    if (!rid) return;
-    setStatus("connecting");
-    // Simple peer sync via BroadcastChannel (same device tabs) as fallback
-    // For real multi-device: connect to ws://your-server/sync
+  const joinRoom = () => {
+    if (!roomInput.trim()) return;
+    setWtIsHost(false);
+    window.__wtConnect?.(roomInput.trim().toUpperCase(), false);
+  };
+
+  const leaveRoom = () => window.__wtDisconnect?.();
+
+  const pickVideo = (video) => {
+    if (!wtIsHost) return;
+    setWtRoomVideo(video);
+    window.__wtSend?.({ type: "video", roomId: wtRoomId, videoPath: video.file_path, title: video.title });
+    addWtLog("🎬 Started: " + video.title);
+    // Load into the wt-video element
+    const v = document.getElementById("wt-video");
+    if (v) { v.src = video.url; v.currentTime = 0; v.play(); }
+  };
+
+  const openFilePicker = async () => {
+    if (!wtIsHost) return;
     try {
-      const bc = new BroadcastChannel(`ns_room_${rid}`);
-      wsRef.current = bc;
-      bc.onmessage = (e) => {
-        if (e.data.type === "seek") {
-          const v = document.getElementById("main-video");
-          if (v && Math.abs(v.currentTime - e.data.time) > 1) v.currentTime = e.data.time;
-        }
-        if (e.data.type === "play")  { document.getElementById("main-video")?.play(); }
-        if (e.data.type === "pause") { document.getElementById("main-video")?.pause(); }
-        if (e.data.type === "peers") setPeers(e.data.count);
-      };
-      bc.postMessage({ type:"peers", count: peers + 1 });
-      setJoined(true); setStatus("connected"); setRoomId(rid);
-    } catch { setStatus("error"); }
+      const result = await window.electronAPI?.selectFile?.();
+      if (!result) return;
+      const video = { ...result, id: Date.now(), duration: 0 };
+      setWtRoomVideo(video);
+      window.__wtSend?.({ type: "video", roomId: wtRoomId, videoPath: video.file_path, title: video.title });
+      addWtLog("🎬 Started: " + video.title);
+      const v = document.getElementById("wt-video");
+      if (v) { v.src = video.url; v.currentTime = 0; v.play(); }
+    } catch(e) { console.error(e); }
   };
 
-  const leaveRoom = () => {
-    wsRef.current?.close?.();
-    wsRef.current = null;
-    setJoined(false); setStatus("idle"); setPeers(1);
+  const fmtTime = (s) => {
+    if (!s || isNaN(s)) return "--:--";
+    return Math.floor(s/60) + ":" + String(Math.floor(s%60)).padStart(2,"0");
   };
 
-  // Sync video events when in a room
-  useEffect(() => {
-    if (!joined || !wsRef.current) return;
-    const v = document.getElementById("main-video");
-    if (!v) return;
-    const onPlay  = () => wsRef.current?.postMessage({ type:"play" });
-    const onPause = () => wsRef.current?.postMessage({ type:"pause" });
-    const onSeek  = () => wsRef.current?.postMessage({ type:"seek", time: v.currentTime });
-    v.addEventListener("play",  onPlay);
-    v.addEventListener("pause", onPause);
-    v.addEventListener("seeked",onSeek);
-    return () => { v.removeEventListener("play",onPlay); v.removeEventListener("pause",onPause); v.removeEventListener("seeked",onSeek); };
-  }, [joined]);
-
-  useEffect(() => () => leaveRoom(), []);
+  const statusDot = { idle:"rgba(255,255,255,0.2)", connecting:"#facc15", connected:"#3ddc84", error:"#f87171" }[wtStatus];
 
   return (
-    <div className="glass-panel" style={{ position:"fixed",top:"60px",right:"20px",borderRadius:"16px",padding:"18px 20px",zIndex:480,width:"280px",animation:"fadeIn 0.15s ease" }}>
-      <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"14px" }}>
-        <div style={{ display:"flex",alignItems:"center",gap:"8px" }}>
-          <span style={{ fontSize:"16px" }}>👥</span>
-          <span style={{ fontSize:"13px",fontWeight:700,color:"#fff" }}>Watch Together</span>
+    <div style={{ flex:1, display:"flex", flexDirection:"column", height:"100%", overflow:"hidden", background:"#0a0a0a" }}>
+      <style>{`@keyframes wtpulse { 0%,100%{opacity:1} 50%{opacity:0.3} }`}</style>
+
+      {/* Header */}
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"12px 24px", borderBottom:"1px solid rgba(255,255,255,0.07)", flexShrink:0 }}>
+        <div style={{ display:"flex", alignItems:"center", gap:"10px" }}>
+          <span style={{ fontSize:"18px" }}>👥</span>
+          <span style={{ fontSize:"15px", fontWeight:700, color:"#fff" }}>Watch Together</span>
+          <div style={{ width:"8px", height:"8px", borderRadius:"50%", background:statusDot }}/>
+          {wtJoined && <span style={{ fontSize:"12px", color:"#3ddc84", fontWeight:600 }}>{wtPeers} viewer{wtPeers!==1?"s":""} connected</span>}
+          {wtJoined && <span style={{ fontSize:"10px", background: wtIsHost?"rgba(229,9,20,0.15)":"rgba(255,255,255,0.06)", border:`1px solid ${wtIsHost?"rgba(229,9,20,0.3)":"rgba(255,255,255,0.1)"}`, color: wtIsHost?"#e50914":"rgba(255,255,255,0.5)", borderRadius:"5px", padding:"2px 8px", fontWeight:600 }}>{wtIsHost?"HOST":"VIEWER"}</span>}
         </div>
-        <button onClick={onClose} style={{ background:"none",border:"none",color:"var(--text3)",cursor:"pointer",fontSize:"16px" }}>✕</button>
+        {wtJoined && (
+          <div style={{ display:"flex", alignItems:"center", gap:"8px" }}>
+            <div style={{ background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.1)", borderRadius:"8px", padding:"5px 14px", fontFamily:"monospace", fontSize:"16px", fontWeight:800, color:"#fff", letterSpacing:"0.12em" }}>{wtRoomId}</div>
+            <button onClick={() => { navigator.clipboard?.writeText(wtRoomId); setCopied(true); setTimeout(()=>setCopied(false),2000); }}
+              style={{ padding:"5px 12px", background:copied?"rgba(29,185,84,0.15)":"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.1)", color:copied?"#3ddc84":"#fff", borderRadius:"8px", cursor:"pointer", fontSize:"11px" }}>
+              {copied ? "✅ Copied" : "📋 Copy ID"}
+            </button>
+            <button onClick={leaveRoom}
+              style={{ padding:"5px 12px", background:"rgba(229,9,20,0.12)", border:"1px solid rgba(229,9,20,0.3)", color:"#e50914", borderRadius:"8px", cursor:"pointer", fontSize:"11px", fontWeight:600 }}>
+              Leave
+            </button>
+          </div>
+        )}
       </div>
 
-      {!currentVideo && <p style={{ fontSize:"12px",color:"var(--text3)",margin:"0 0 12px" }}>Play a video first to sync with others.</p>}
+      {/* Body */}
+      {!wtJoined ? (
+        <div style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center" }}>
+          <div style={{ width:"380px" }}>
+            <div style={{ textAlign:"center", marginBottom:"32px" }}>
+              <div style={{ fontSize:"52px", marginBottom:"10px" }}>🎬</div>
+              <div style={{ fontSize:"20px", fontWeight:800, color:"#fff", marginBottom:"8px" }}>Watch Together</div>
+              <div style={{ fontSize:"13px", color:"rgba(255,255,255,0.4)", lineHeight:1.7 }}>
+                Create a room and invite friends.<br/>
+                Everyone watches in perfect sync.
+              </div>
+            </div>
 
-      {!joined ? (
-        <>
-          <p style={{ fontSize:"12px",color:"var(--text3)",margin:"0 0 14px",lineHeight:1.6 }}>
-            Create a room or join one. Share the Room ID with friends — works across browser tabs on the same device, or use a WebSocket server for remote sync.
-          </p>
-          <button onClick={createRoom} style={{ width:"100%",padding:"10px",background:"linear-gradient(135deg,var(--red),#c40812)",border:"none",color:"#fff",borderRadius:"9px",cursor:"pointer",fontSize:"13px",fontWeight:700,marginBottom:"10px",boxShadow:"0 4px 14px var(--red-glow)" }}>
-            + Create Room
-          </button>
-          <div style={{ display:"flex",gap:"8px" }}>
-            <input type="text" placeholder="Room ID..." value={roomId} onChange={e=>setRoomId(e.target.value.toUpperCase())} style={{ flex:1,background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)",color:"#fff",borderRadius:"8px",padding:"8px 10px",fontSize:"13px",outline:"none",fontFamily:"monospace" }}/>
-            <button onClick={()=>joinRoom()} style={{ padding:"8px 14px",background:"rgba(255,255,255,0.08)",border:"1px solid var(--border)",color:"#fff",borderRadius:"8px",cursor:"pointer",fontSize:"12px",fontWeight:600 }}>Join</button>
+            {wtStatus === "error" && (
+              <div style={{ padding:"10px 14px", background:"rgba(220,38,38,0.08)", border:"1px solid rgba(220,38,38,0.2)", borderRadius:"8px", fontSize:"12px", color:"#f87171", marginBottom:"16px", textAlign:"center" }}>
+                ⚠ Connection failed — make sure the backend is running
+              </div>
+            )}
+
+            <button onClick={createRoom} disabled={wtStatus==="connecting"}
+              style={{ width:"100%", padding:"15px", background:"linear-gradient(135deg,#e50914,#c40812)", border:"none", color:"#fff", borderRadius:"12px", cursor:"pointer", fontSize:"15px", fontWeight:800, marginBottom:"16px", boxShadow:"0 6px 24px rgba(229,9,20,0.35)", opacity:wtStatus==="connecting"?0.6:1 }}>
+              {wtStatus==="connecting" ? "Connecting…" : "🎬 Create a Room"}
+            </button>
+
+            <div style={{ display:"flex", alignItems:"center", gap:"10px", marginBottom:"16px" }}>
+              <div style={{ flex:1, height:"1px", background:"rgba(255,255,255,0.08)" }}/>
+              <span style={{ fontSize:"11px", color:"rgba(255,255,255,0.3)" }}>or join existing room</span>
+              <div style={{ flex:1, height:"1px", background:"rgba(255,255,255,0.08)" }}/>
+            </div>
+
+            <div style={{ display:"flex", gap:"8px" }}>
+              <input type="text" placeholder="Room ID (e.g. XZ2SJM)…" value={roomInput}
+                onChange={e => setRoomInput(e.target.value.toUpperCase())}
+                onKeyDown={e => e.key==="Enter" && joinRoom()}
+                style={{ flex:1, background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.1)", color:"#fff", borderRadius:"10px", padding:"12px 14px", fontSize:"14px", outline:"none", fontFamily:"monospace", letterSpacing:"0.08em" }}
+              />
+              <button onClick={joinRoom}
+                style={{ padding:"12px 20px", background:"rgba(255,255,255,0.08)", border:"1px solid rgba(255,255,255,0.15)", color:"#fff", borderRadius:"10px", cursor:"pointer", fontSize:"13px", fontWeight:700 }}>
+                Join
+              </button>
+            </div>
           </div>
-        </>
+        </div>
       ) : (
-        <>
-          <div style={{ background:"rgba(255,255,255,0.04)",borderRadius:"10px",padding:"12px",marginBottom:"12px",textAlign:"center" }}>
-            <div style={{ fontSize:"10px",color:"var(--text3)",marginBottom:"4px",letterSpacing:"0.08em" }}>ROOM ID</div>
-            <div style={{ fontSize:"22px",fontWeight:800,color:"#fff",fontFamily:"monospace",letterSpacing:"0.1em" }}>{roomId}</div>
-            <div style={{ fontSize:"11px",color:"var(--text3)",marginTop:"4px" }}>Share this with friends</div>
+        /* Theatre */
+        <div style={{ flex:1, display:"flex", overflow:"hidden" }}>
+
+          {/* Video */}
+          <div style={{ flex:1, background:"#000", display:"flex", alignItems:"center", justifyContent:"center", position:"relative" }}>
+            {wtRoomVideo ? (
+              <video
+                id="wt-video"
+                src={wtRoomVideo.url}
+                controls
+                autoPlay
+                style={{ width:"100%", height:"100%", objectFit:"contain" }}
+              />
+            ) : (
+              <div style={{ textAlign:"center", color:"rgba(255,255,255,0.3)" }}>
+                <div style={{ fontSize:"56px", marginBottom:"16px" }}>🎬</div>
+                {wtIsHost ? (
+                  <>
+                    <div style={{ fontSize:"16px", fontWeight:600, color:"rgba(255,255,255,0.6)", marginBottom:"8px" }}>You are the host</div>
+                    <div style={{ fontSize:"13px", marginBottom:"20px" }}>Pick a video from the list → or open a file</div>
+                    <button onClick={openFilePicker}
+                      style={{ padding:"11px 24px", background:"linear-gradient(135deg,#e50914,#c40812)", border:"none", color:"#fff", borderRadius:"10px", cursor:"pointer", fontSize:"13px", fontWeight:700, boxShadow:"0 4px 16px rgba(229,9,20,0.3)" }}>
+                      📂 Open File
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <div style={{ fontSize:"16px", fontWeight:600, color:"rgba(255,255,255,0.6)", marginBottom:"8px" }}>Waiting for host…</div>
+                    <div style={{ fontSize:"13px", marginBottom:"16px" }}>The host will start a video shortly</div>
+                    <div style={{ display:"flex", gap:"5px", justifyContent:"center" }}>
+                      {[0,1,2].map(i => <div key={i} style={{ width:"9px", height:"9px", borderRadius:"50%", background:"#3ddc84", animation:`wtpulse 1.3s ${i*0.22}s infinite` }}/>)}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
           </div>
-          <div style={{ display:"flex",alignItems:"center",gap:"8px",marginBottom:"12px" }}>
-            <div style={{ width:"8px",height:"8px",borderRadius:"50%",background:"#3ddc84",animation:"pulse 1.4s infinite",flexShrink:0 }}/>
-            <span style={{ fontSize:"12px",color:"#3ddc84" }}>Connected · {peers} viewer{peers!==1?"s":""}</span>
+
+          {/* Sidebar */}
+          <div style={{ width:"272px", flexShrink:0, display:"flex", flexDirection:"column", borderLeft:"1px solid rgba(255,255,255,0.07)", background:"rgba(8,8,8,0.98)" }}>
+
+            {/* Status */}
+            <div style={{ padding:"14px 16px", borderBottom:"1px solid rgba(255,255,255,0.07)" }}>
+              <div style={{ display:"flex", alignItems:"center", gap:"6px", marginBottom:"6px" }}>
+                <div style={{ width:"7px", height:"7px", borderRadius:"50%", background:"#3ddc84", animation:"wtpulse 1.4s infinite" }}/>
+                <span style={{ fontSize:"12px", color:"#3ddc84", fontWeight:600 }}>{wtPeers} viewer{wtPeers!==1?"s":""}</span>
+              </div>
+              {wtRoomVideo && (
+                <div style={{ fontSize:"11px", color:"rgba(255,255,255,0.45)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+                  ▶ {wtRoomVideo.title}
+                </div>
+              )}
+            </div>
+
+            {/* Activity */}
+            <div style={{ padding:"10px 16px", borderBottom:"1px solid rgba(255,255,255,0.07)", minHeight:"80px" }}>
+              <div style={{ fontSize:"10px", color:"rgba(255,255,255,0.25)", letterSpacing:"0.08em", marginBottom:"6px" }}>ACTIVITY</div>
+              {wtLog.length === 0
+                ? <div style={{ fontSize:"11px", color:"rgba(255,255,255,0.2)" }}>No activity yet</div>
+                : wtLog.map((l,i) => (
+                  <div key={i} style={{ fontSize:"11px", lineHeight:1.9, color: i===wtLog.length-1 ? "rgba(255,255,255,0.75)" : "rgba(255,255,255,0.3)" }}>{l}</div>
+                ))
+              }
+            </div>
+
+            {/* Open file (host) */}
+            {wtIsHost && (
+              <div style={{ padding:"10px 16px", borderBottom:"1px solid rgba(255,255,255,0.07)" }}>
+                <button onClick={openFilePicker}
+                  style={{ width:"100%", padding:"9px", background:"rgba(229,9,20,0.1)", border:"1px solid rgba(229,9,20,0.25)", color:"#e50914", borderRadius:"8px", cursor:"pointer", fontSize:"12px", fontWeight:700 }}>
+                  📂 Open File…
+                </button>
+              </div>
+            )}
+
+            {/* Library picker */}
+            <div style={{ flex:1, overflowY:"auto", padding:"10px 16px" }}>
+              <div style={{ fontSize:"10px", color:"rgba(255,255,255,0.25)", letterSpacing:"0.08em", marginBottom:"8px" }}>
+                {wtIsHost ? "LIBRARY — click to play" : "LIBRARY (host controls)"}
+              </div>
+              {videos.length === 0 ? (
+                <div style={{ fontSize:"11px", color:"rgba(255,255,255,0.2)", lineHeight:1.7 }}>
+                  No videos loaded.<br/>Open a folder from Home first.
+                </div>
+              ) : videos.filter(v => !v.isAudio).map((v,i) => (
+                <div key={v.id||i}
+                  onClick={() => wtIsHost && pickVideo(v)}
+                  style={{
+                    display:"flex", alignItems:"center", gap:"8px",
+                    padding:"7px 8px", borderRadius:"7px", marginBottom:"2px",
+                    cursor: wtIsHost ? "pointer" : "default",
+                    background: wtRoomVideo?.file_path===v.file_path ? "rgba(229,9,20,0.12)" : "transparent",
+                    border:`1px solid ${wtRoomVideo?.file_path===v.file_path?"rgba(229,9,20,0.3)":"transparent"}`,
+                    transition:"all 0.12s",
+                  }}
+                  onMouseEnter={e => { if(wtIsHost) e.currentTarget.style.background="rgba(255,255,255,0.05)"; }}
+                  onMouseLeave={e => { if(wtRoomVideo?.file_path!==v.file_path) e.currentTarget.style.background="transparent"; }}
+                >
+                  {v.thumbnail
+                    ? <img src={v.thumbnail} alt="" style={{ width:"44px",height:"28px",borderRadius:"4px",objectFit:"cover",flexShrink:0 }}/>
+                    : <div style={{ width:"44px",height:"28px",borderRadius:"4px",background:"rgba(255,255,255,0.06)",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"12px" }}>🎬</div>
+                  }
+                  <div style={{ minWidth:0 }}>
+                    <div style={{ fontSize:"11px",fontWeight:wtRoomVideo?.file_path===v.file_path?600:400,color:wtRoomVideo?.file_path===v.file_path?"#fff":"rgba(255,255,255,0.65)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>
+                      {v.title}
+                    </div>
+                    <div style={{ fontSize:"10px",color:"rgba(255,255,255,0.3)" }}>{fmtTime(v.duration)}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
-          <button onClick={()=>{ navigator.clipboard?.writeText(roomId); }} style={{ width:"100%",padding:"8px",background:"rgba(255,255,255,0.06)",border:"1px solid var(--border)",color:"#fff",borderRadius:"8px",cursor:"pointer",fontSize:"12px",marginBottom:"8px" }}>
-            📋 Copy Room ID
-          </button>
-          <button onClick={leaveRoom} style={{ width:"100%",padding:"8px",background:"rgba(229,9,20,0.12)",border:"1px solid rgba(229,9,20,0.3)",color:"var(--red)",borderRadius:"8px",cursor:"pointer",fontSize:"12px",fontWeight:600 }}>
-            Leave Room
-          </button>
-        </>
+        </div>
       )}
     </div>
   );
 }
+
 
 function SettingsPage() {
   const { volume, setVolume, isMuted, setMuted, history } = useAppStore();
@@ -729,7 +873,7 @@ export default function App() {
       case "home":     return <HomePage onQueue={addToQueue} sortBy={sortBy} sortDir={sortDir} onURLOpen={()=>setShowNetworkURL(true)} onRemoveVideo={removeVideo} onPlayNext={playNext} onPlayAudio={playAudio}/>;
       case "videos":   return <VideosPage onQueue={addToQueue} sortBy={sortBy} sortDir={sortDir} onRemove={removeVideo}/>;
       case "audio":    return <AudioPage onPlayAudio={playAudio}/>;
-      case "together": return <div style={{flex:1,overflowY:"auto",padding:"24px 28px"}}><WatchTogether currentVideo={currentVideo} onClose={()=>setPage("home")}/></div>;
+      case "together": return <WatchTogether onClose={()=>setPage("home")}/>;
       case "youtube":  return <YoutubePage/>;
       case "history":  return <HistoryPage/>;
       case "settings": return <SettingsPage/>;
@@ -737,8 +881,7 @@ export default function App() {
     }
   };
 
-  const showYtPlayer = !!useAppStore.getState().ytTrack;
-  const bottomOffset = showMini || showAudioPlayer ? (showYtPlayer ? "170px" : "90px") : (showYtPlayer ? "90px" : "28px");
+  const bottomOffset = showMini||showAudioPlayer ? "90px" : "28px";
 
   return (
     <div onDragOver={e=>{e.preventDefault();setIsDragOver(true);}} onDragLeave={()=>setIsDragOver(false)} onDrop={handleDrop}
@@ -820,6 +963,7 @@ export default function App() {
       )}
 
       <YoutubeMiniPlayer/>
+      <WatchTogetherManager/>
       {showNetworkURL&&<NetworkURLPlayer onClose={()=>setShowNetworkURL(false)}/>}
       {toast&&<Toast message={toast} onDone={()=>setToast(null)}/>}
       {showShortcuts&&<ShortcutsOverlay onClose={()=>setShowShortcuts(false)}/>}
