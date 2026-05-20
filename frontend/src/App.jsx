@@ -428,11 +428,29 @@ function WatchTogether({ onClose }) {
     videos,
     wtRoomId, wtJoined, wtPeers, wtIsHost,
     wtRoomVideo, wtLog, wtStatus,
+    wtNickname, wtViewers, wtMessages,
     setWtRoomVideo, setWtIsHost, addWtLog,
+    setWtNickname, addWtMessage,
   } = useAppStore();
 
-  const [roomInput, setRoomInput] = useState("");
-  const [copied,    setCopied]    = useState(false);
+  const [roomInput,   setRoomInput]   = useState("");
+  const [copied,      setCopied]      = useState(false);
+  const [chatInput,   setChatInput]   = useState("");
+  const [nickDraft,   setNickDraft]   = useState(wtNickname || "");
+  const [nickSet,     setNickSet]     = useState(!!wtNickname);
+  const [showChat,    setShowChat]    = useState(true);
+  const [showNetUrl,  setShowNetUrl]  = useState(false);
+  const [netUrl,      setNetUrl]      = useState("");
+  const [netTitle,    setNetTitle]    = useState("");
+  const chatEndRef = useRef(null);
+
+  useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [wtMessages]);
+
+  const saveNickname = () => {
+    const n = nickDraft.trim() || "Viewer";
+    setWtNickname(n);
+    setNickSet(true);
+  };
 
   const createRoom = () => {
     const id = Math.random().toString(36).slice(2,8).toUpperCase();
@@ -449,14 +467,31 @@ function WatchTogether({ onClose }) {
 
   const leaveRoom = () => window.__wtDisconnect?.();
 
+  const sendChat = () => {
+    const text = chatInput.trim();
+    if (!text) return;
+    // Optimistic add (self)
+    addWtMessage({ nickname: wtNickname || "You", text, ts: Date.now(), self: true });
+    window.__wtSend?.({ type: "chat", roomId: wtRoomId, text });
+    setChatInput("");
+  };
+
+  const getStreamUrl = (video) => {
+    if (video.file_path) {
+      return `http://localhost:5000/api/stream-file?path=${encodeURIComponent(video.file_path)}`;
+    }
+    return video.url;
+  };
+
   const pickVideo = (video) => {
     if (!wtIsHost) return;
-    setWtRoomVideo(video);
-    window.__wtSend?.({ type: "video", roomId: wtRoomId, videoPath: video.file_path, title: video.title });
+    const streamUrl = getStreamUrl(video);
+    const rv = { ...video, streamUrl };
+    setWtRoomVideo(rv);
+    window.__wtSend?.({ type: "video", roomId: wtRoomId, videoPath: video.file_path, streamUrl, title: video.title });
     addWtLog("🎬 Started: " + video.title);
-    // Load into the wt-video element
     const v = document.getElementById("wt-video");
-    if (v) { v.src = video.url; v.currentTime = 0; v.play(); }
+    if (v) { v.src = streamUrl; v.currentTime = 0; v.play(); }
   };
 
   const openFilePicker = async () => {
@@ -464,88 +499,126 @@ function WatchTogether({ onClose }) {
     try {
       const result = await window.electronAPI?.selectFile?.();
       if (!result) return;
-      const video = { ...result, id: Date.now(), duration: 0 };
-      setWtRoomVideo(video);
-      window.__wtSend?.({ type: "video", roomId: wtRoomId, videoPath: video.file_path, title: video.title });
-      addWtLog("🎬 Started: " + video.title);
+      const streamUrl = getStreamUrl(result);
+      const rv = { ...result, id: Date.now(), duration: 0, streamUrl };
+      setWtRoomVideo(rv);
+      window.__wtSend?.({ type: "video", roomId: wtRoomId, videoPath: result.file_path, streamUrl, title: result.title });
+      addWtLog("🎬 Started: " + result.title);
       const v = document.getElementById("wt-video");
-      if (v) { v.src = video.url; v.currentTime = 0; v.play(); }
+      if (v) { v.src = streamUrl; v.currentTime = 0; v.play(); }
     } catch(e) { console.error(e); }
   };
 
-  const fmtTime = (s) => {
-    if (!s || isNaN(s)) return "--:--";
-    return Math.floor(s/60) + ":" + String(Math.floor(s%60)).padStart(2,"0");
+  const watchNetInRoom = () => {
+    if (!netUrl.trim()) return;
+    const url   = netUrl.trim();
+    const title = netTitle.trim() || url.split("/").pop().split("?")[0] || "Network stream";
+    const rv = { id: url, title, url, streamUrl: url, thumbnail: null, file_path: null };
+    setWtRoomVideo(rv);
+    window.__wtSend?.({ type: "video", roomId: wtRoomId, streamUrl: url, title, videoPath: null });
+    addWtLog("🌐 " + title);
+    const v = document.getElementById("wt-video");
+    if (v) { v.src = url; v.currentTime = 0; v.play(); }
+    setShowNetUrl(false); setNetUrl(""); setNetTitle("");
   };
 
+  const fmtTime = (s) => { if (!s||isNaN(s)) return "--:--"; return Math.floor(s/60)+":"+String(Math.floor(s%60)).padStart(2,"0"); };
+  const fmtTs   = (ts) => { const d = new Date(ts); return d.getHours()+":"+String(d.getMinutes()).padStart(2,"0"); };
   const statusDot = { idle:"rgba(255,255,255,0.2)", connecting:"#facc15", connected:"#3ddc84", error:"#f87171" }[wtStatus];
+
+  // ── Nickname setup screen ────────────────────────────────────────
+  if (!nickSet) return (
+    <div style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", background:"#0a0a0a" }}>
+      <div style={{ width:"340px", textAlign:"center" }}>
+        <div style={{ fontSize:"48px", marginBottom:"12px" }}>👤</div>
+        <div style={{ fontSize:"20px", fontWeight:800, color:"#fff", marginBottom:"6px" }}>Choose your name</div>
+        <div style={{ fontSize:"13px", color:"rgba(255,255,255,0.4)", marginBottom:"28px" }}>
+          This shows in chat and the viewer list when watching with others.
+        </div>
+        <input
+          type="text" placeholder="Your name (e.g. Riju)…" value={nickDraft}
+          onChange={e => setNickDraft(e.target.value)}
+          onKeyDown={e => e.key==="Enter" && saveNickname()}
+          maxLength={24}
+          autoFocus
+          style={{ width:"100%", background:"rgba(255,255,255,0.07)", border:"1px solid rgba(255,255,255,0.15)", color:"#fff", borderRadius:"10px", padding:"13px 16px", fontSize:"15px", outline:"none", textAlign:"center", boxSizing:"border-box", marginBottom:"14px" }}
+        />
+        <button onClick={saveNickname}
+          style={{ width:"100%", padding:"13px", background:"linear-gradient(135deg,#e50914,#c40812)", border:"none", color:"#fff", borderRadius:"10px", cursor:"pointer", fontSize:"14px", fontWeight:800 }}>
+          Continue →
+        </button>
+        <button onClick={() => { setNickDraft("Viewer"); setNickSet(true); }}
+          style={{ background:"none", border:"none", color:"rgba(255,255,255,0.3)", cursor:"pointer", fontSize:"12px", marginTop:"12px", display:"block", width:"100%", textAlign:"center" }}>
+          Skip (join as Viewer)
+        </button>
+      </div>
+    </div>
+  );
 
   return (
     <div style={{ flex:1, display:"flex", flexDirection:"column", height:"100%", overflow:"hidden", background:"#0a0a0a" }}>
       <style>{`@keyframes wtpulse { 0%,100%{opacity:1} 50%{opacity:0.3} }`}</style>
 
       {/* Header */}
-      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"12px 24px", borderBottom:"1px solid rgba(255,255,255,0.07)", flexShrink:0 }}>
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"10px 20px", borderBottom:"1px solid rgba(255,255,255,0.07)", flexShrink:0 }}>
         <div style={{ display:"flex", alignItems:"center", gap:"10px" }}>
-          <span style={{ fontSize:"18px" }}>👥</span>
-          <span style={{ fontSize:"15px", fontWeight:700, color:"#fff" }}>Watch Together</span>
-          <div style={{ width:"8px", height:"8px", borderRadius:"50%", background:statusDot }}/>
-          {wtJoined && <span style={{ fontSize:"12px", color:"#3ddc84", fontWeight:600 }}>{wtPeers} viewer{wtPeers!==1?"s":""} connected</span>}
-          {wtJoined && <span style={{ fontSize:"10px", background: wtIsHost?"rgba(229,9,20,0.15)":"rgba(255,255,255,0.06)", border:`1px solid ${wtIsHost?"rgba(229,9,20,0.3)":"rgba(255,255,255,0.1)"}`, color: wtIsHost?"#e50914":"rgba(255,255,255,0.5)", borderRadius:"5px", padding:"2px 8px", fontWeight:600 }}>{wtIsHost?"HOST":"VIEWER"}</span>}
+          <span style={{ fontSize:"16px" }}>👥</span>
+          <span style={{ fontSize:"14px", fontWeight:700, color:"#fff" }}>Watch Together</span>
+          <div style={{ width:"7px", height:"7px", borderRadius:"50%", background:statusDot }}/>
+          {wtJoined && <span style={{ fontSize:"12px", color:"#3ddc84", fontWeight:600 }}>{wtPeers} connected</span>}
+          {wtJoined && <span style={{ fontSize:"10px", background:wtIsHost?"rgba(229,9,20,0.15)":"rgba(255,255,255,0.06)", border:`1px solid ${wtIsHost?"rgba(229,9,20,0.3)":"rgba(255,255,255,0.1)"}`, color:wtIsHost?"#e50914":"rgba(255,255,255,0.5)", borderRadius:"4px", padding:"1px 7px", fontWeight:700 }}>{wtIsHost?"HOST":"VIEWER"}</span>}
+          <span style={{ fontSize:"11px", color:"rgba(255,255,255,0.3)", cursor:"pointer" }} onClick={() => setNickSet(false)}>
+            👤 {wtNickname || "Viewer"}
+          </span>
         </div>
-        {wtJoined && (
-          <div style={{ display:"flex", alignItems:"center", gap:"8px" }}>
-            <div style={{ background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.1)", borderRadius:"8px", padding:"5px 14px", fontFamily:"monospace", fontSize:"16px", fontWeight:800, color:"#fff", letterSpacing:"0.12em" }}>{wtRoomId}</div>
+        <div style={{ display:"flex", alignItems:"center", gap:"8px" }}>
+          {wtJoined && <>
+            <div style={{ fontFamily:"monospace", fontSize:"15px", fontWeight:800, color:"#fff", background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.1)", borderRadius:"7px", padding:"4px 12px", letterSpacing:"0.1em" }}>{wtRoomId}</div>
             <button onClick={() => { navigator.clipboard?.writeText(wtRoomId); setCopied(true); setTimeout(()=>setCopied(false),2000); }}
-              style={{ padding:"5px 12px", background:copied?"rgba(29,185,84,0.15)":"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.1)", color:copied?"#3ddc84":"#fff", borderRadius:"8px", cursor:"pointer", fontSize:"11px" }}>
-              {copied ? "✅ Copied" : "📋 Copy ID"}
+              style={{ padding:"4px 10px", background:copied?"rgba(29,185,84,0.15)":"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.1)", color:copied?"#3ddc84":"#fff", borderRadius:"7px", cursor:"pointer", fontSize:"11px" }}>
+              {copied ? "✅" : "📋 Copy"}
+            </button>
+            <button onClick={() => setShowChat(s => !s)}
+              style={{ padding:"4px 10px", background:showChat?"rgba(229,9,20,0.12)":"rgba(255,255,255,0.06)", border:`1px solid ${showChat?"rgba(229,9,20,0.3)":"rgba(255,255,255,0.1)"}`, color:showChat?"#e50914":"rgba(255,255,255,0.5)", borderRadius:"7px", cursor:"pointer", fontSize:"11px" }}>
+              💬 Chat
             </button>
             <button onClick={leaveRoom}
-              style={{ padding:"5px 12px", background:"rgba(229,9,20,0.12)", border:"1px solid rgba(229,9,20,0.3)", color:"#e50914", borderRadius:"8px", cursor:"pointer", fontSize:"11px", fontWeight:600 }}>
+              style={{ padding:"4px 10px", background:"rgba(229,9,20,0.12)", border:"1px solid rgba(229,9,20,0.3)", color:"#e50914", borderRadius:"7px", cursor:"pointer", fontSize:"11px", fontWeight:700 }}>
               Leave
             </button>
-          </div>
-        )}
+          </>}
+        </div>
       </div>
 
-      {/* Body */}
+      {/* Lobby */}
       {!wtJoined ? (
         <div style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center" }}>
-          <div style={{ width:"380px" }}>
-            <div style={{ textAlign:"center", marginBottom:"32px" }}>
-              <div style={{ fontSize:"52px", marginBottom:"10px" }}>🎬</div>
-              <div style={{ fontSize:"20px", fontWeight:800, color:"#fff", marginBottom:"8px" }}>Watch Together</div>
+          <div style={{ width:"360px" }}>
+            <div style={{ textAlign:"center", marginBottom:"28px" }}>
+              <div style={{ fontSize:"48px", marginBottom:"10px" }}>🎬</div>
+              <div style={{ fontSize:"18px", fontWeight:800, color:"#fff", marginBottom:"6px" }}>Watch Together</div>
               <div style={{ fontSize:"13px", color:"rgba(255,255,255,0.4)", lineHeight:1.7 }}>
-                Create a room and invite friends.<br/>
-                Everyone watches in perfect sync.
+                Hi <strong style={{ color:"#fff" }}>{wtNickname || "Viewer"}</strong> 👋<br/>
+                Create a room or join one with a Room ID.
               </div>
             </div>
-
-            {wtStatus === "error" && (
-              <div style={{ padding:"10px 14px", background:"rgba(220,38,38,0.08)", border:"1px solid rgba(220,38,38,0.2)", borderRadius:"8px", fontSize:"12px", color:"#f87171", marginBottom:"16px", textAlign:"center" }}>
-                ⚠ Connection failed — make sure the backend is running
-              </div>
-            )}
-
+            {wtStatus==="error" && <div style={{ padding:"10px", background:"rgba(220,38,38,0.08)", border:"1px solid rgba(220,38,38,0.2)", borderRadius:"8px", fontSize:"12px", color:"#f87171", marginBottom:"14px", textAlign:"center" }}>⚠ Connection failed — check backend is running</div>}
             <button onClick={createRoom} disabled={wtStatus==="connecting"}
-              style={{ width:"100%", padding:"15px", background:"linear-gradient(135deg,#e50914,#c40812)", border:"none", color:"#fff", borderRadius:"12px", cursor:"pointer", fontSize:"15px", fontWeight:800, marginBottom:"16px", boxShadow:"0 6px 24px rgba(229,9,20,0.35)", opacity:wtStatus==="connecting"?0.6:1 }}>
+              style={{ width:"100%", padding:"14px", background:"linear-gradient(135deg,#e50914,#c40812)", border:"none", color:"#fff", borderRadius:"11px", cursor:"pointer", fontSize:"15px", fontWeight:800, marginBottom:"14px", boxShadow:"0 6px 20px rgba(229,9,20,0.3)", opacity:wtStatus==="connecting"?0.6:1 }}>
               {wtStatus==="connecting" ? "Connecting…" : "🎬 Create a Room"}
             </button>
-
-            <div style={{ display:"flex", alignItems:"center", gap:"10px", marginBottom:"16px" }}>
-              <div style={{ flex:1, height:"1px", background:"rgba(255,255,255,0.08)" }}/>
-              <span style={{ fontSize:"11px", color:"rgba(255,255,255,0.3)" }}>or join existing room</span>
-              <div style={{ flex:1, height:"1px", background:"rgba(255,255,255,0.08)" }}/>
+            <div style={{ display:"flex", alignItems:"center", gap:"8px", marginBottom:"14px" }}>
+              <div style={{ flex:1, height:"1px", background:"rgba(255,255,255,0.07)" }}/>
+              <span style={{ fontSize:"11px", color:"rgba(255,255,255,0.3)" }}>or join</span>
+              <div style={{ flex:1, height:"1px", background:"rgba(255,255,255,0.07)" }}/>
             </div>
-
             <div style={{ display:"flex", gap:"8px" }}>
-              <input type="text" placeholder="Room ID (e.g. XZ2SJM)…" value={roomInput}
+              <input type="text" placeholder="Room ID…" value={roomInput}
                 onChange={e => setRoomInput(e.target.value.toUpperCase())}
                 onKeyDown={e => e.key==="Enter" && joinRoom()}
-                style={{ flex:1, background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.1)", color:"#fff", borderRadius:"10px", padding:"12px 14px", fontSize:"14px", outline:"none", fontFamily:"monospace", letterSpacing:"0.08em" }}
-              />
+                style={{ flex:1, background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.1)", color:"#fff", borderRadius:"9px", padding:"11px 14px", fontSize:"14px", outline:"none", fontFamily:"monospace", letterSpacing:"0.08em" }}/>
               <button onClick={joinRoom}
-                style={{ padding:"12px 20px", background:"rgba(255,255,255,0.08)", border:"1px solid rgba(255,255,255,0.15)", color:"#fff", borderRadius:"10px", cursor:"pointer", fontSize:"13px", fontWeight:700 }}>
+                style={{ padding:"11px 18px", background:"rgba(255,255,255,0.08)", border:"1px solid rgba(255,255,255,0.15)", color:"#fff", borderRadius:"9px", cursor:"pointer", fontSize:"13px", fontWeight:700 }}>
                 Join
               </button>
             </div>
@@ -555,34 +628,50 @@ function WatchTogether({ onClose }) {
         /* Theatre */
         <div style={{ flex:1, display:"flex", overflow:"hidden" }}>
 
-          {/* Video */}
-          <div style={{ flex:1, background:"#000", display:"flex", alignItems:"center", justifyContent:"center", position:"relative" }}>
+          {/* Video area */}
+          <div style={{ flex:1, background:"#000", display:"flex", alignItems:"center", justifyContent:"center", position:"relative", minWidth:0 }}>
             {wtRoomVideo ? (
-              <video
-                id="wt-video"
-                src={wtRoomVideo.url}
-                controls
-                autoPlay
-                style={{ width:"100%", height:"100%", objectFit:"contain" }}
-              />
+              <video id="wt-video" src={wtRoomVideo.streamUrl||wtRoomVideo.url} controls autoPlay
+                style={{ width:"100%", height:"100%", objectFit:"contain" }}/>
             ) : (
               <div style={{ textAlign:"center", color:"rgba(255,255,255,0.3)" }}>
-                <div style={{ fontSize:"56px", marginBottom:"16px" }}>🎬</div>
+                <div style={{ fontSize:"52px", marginBottom:"14px" }}>🎬</div>
                 {wtIsHost ? (
                   <>
-                    <div style={{ fontSize:"16px", fontWeight:600, color:"rgba(255,255,255,0.6)", marginBottom:"8px" }}>You are the host</div>
-                    <div style={{ fontSize:"13px", marginBottom:"20px" }}>Pick a video from the list → or open a file</div>
-                    <button onClick={openFilePicker}
-                      style={{ padding:"11px 24px", background:"linear-gradient(135deg,#e50914,#c40812)", border:"none", color:"#fff", borderRadius:"10px", cursor:"pointer", fontSize:"13px", fontWeight:700, boxShadow:"0 4px 16px rgba(229,9,20,0.3)" }}>
-                      📂 Open File
-                    </button>
+                    <div style={{ fontSize:"15px", fontWeight:600, color:"rgba(255,255,255,0.6)", marginBottom:"8px" }}>You are the host</div>
+                    <div style={{ fontSize:"12px", marginBottom:"18px" }}>Pick a video from the list or open a file</div>
+                    <div style={{ display:"flex", gap:"10px" }}>
+                      <button onClick={openFilePicker}
+                        style={{ padding:"10px 22px", background:"linear-gradient(135deg,#e50914,#c40812)", border:"none", color:"#fff", borderRadius:"9px", cursor:"pointer", fontSize:"13px", fontWeight:700 }}>
+                        📂 Open File
+                      </button>
+                      <button onClick={() => setShowNetUrl(s => !s)}
+                        style={{ padding:"10px 22px", background:"rgba(59,130,246,0.12)", border:"1px solid rgba(59,130,246,0.3)", color:"#60a5fa", borderRadius:"9px", cursor:"pointer", fontSize:"13px", fontWeight:700 }}>
+                        🌐 Network URL
+                      </button>
+                    </div>
+                    {showNetUrl && (
+                      <div style={{ marginTop:"14px", padding:"14px", background:"rgba(255,255,255,0.04)", border:"1px solid rgba(255,255,255,0.08)", borderRadius:"10px", width:"320px" }}>
+                        <input type="text" placeholder="https://… (MP4, M3U8, WEBM…)" value={netUrl}
+                          onChange={e => setNetUrl(e.target.value)}
+                          onKeyDown={e => e.key==="Enter" && watchNetInRoom()}
+                          style={{ width:"100%", background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.1)", color:"#fff", borderRadius:"7px", padding:"9px 12px", fontSize:"12px", outline:"none", boxSizing:"border-box", marginBottom:"8px" }}/>
+                        <input type="text" placeholder="Title (optional)" value={netTitle}
+                          onChange={e => setNetTitle(e.target.value)}
+                          onKeyDown={e => e.key==="Enter" && watchNetInRoom()}
+                          style={{ width:"100%", background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.1)", color:"#fff", borderRadius:"7px", padding:"9px 12px", fontSize:"12px", outline:"none", boxSizing:"border-box", marginBottom:"9px" }}/>
+                        <button onClick={watchNetInRoom}
+                          style={{ width:"100%", padding:"9px", background:"rgba(59,130,246,0.15)", border:"1px solid rgba(59,130,246,0.3)", color:"#60a5fa", borderRadius:"7px", cursor:"pointer", fontSize:"13px", fontWeight:700 }}>
+                          ▶ Stream to Room
+                        </button>
+                      </div>
+                    )}
                   </>
                 ) : (
                   <>
-                    <div style={{ fontSize:"16px", fontWeight:600, color:"rgba(255,255,255,0.6)", marginBottom:"8px" }}>Waiting for host…</div>
-                    <div style={{ fontSize:"13px", marginBottom:"16px" }}>The host will start a video shortly</div>
-                    <div style={{ display:"flex", gap:"5px", justifyContent:"center" }}>
-                      {[0,1,2].map(i => <div key={i} style={{ width:"9px", height:"9px", borderRadius:"50%", background:"#3ddc84", animation:`wtpulse 1.3s ${i*0.22}s infinite` }}/>)}
+                    <div style={{ fontSize:"15px", fontWeight:600, color:"rgba(255,255,255,0.6)", marginBottom:"8px" }}>Waiting for host…</div>
+                    <div style={{ display:"flex", gap:"5px", justifyContent:"center", marginTop:"12px" }}>
+                      {[0,1,2].map(i => <div key={i} style={{ width:"8px", height:"8px", borderRadius:"50%", background:"#3ddc84", animation:`wtpulse 1.3s ${i*0.22}s infinite` }}/>)}
                     </div>
                   </>
                 )}
@@ -590,79 +679,122 @@ function WatchTogether({ onClose }) {
             )}
           </div>
 
-          {/* Sidebar */}
-          <div style={{ width:"272px", flexShrink:0, display:"flex", flexDirection:"column", borderLeft:"1px solid rgba(255,255,255,0.07)", background:"rgba(8,8,8,0.98)" }}>
+          {/* Right panel */}
+          <div style={{ width:"280px", flexShrink:0, display:"flex", flexDirection:"column", borderLeft:"1px solid rgba(255,255,255,0.07)", background:"rgba(8,8,8,0.99)" }}>
 
-            {/* Status */}
-            <div style={{ padding:"14px 16px", borderBottom:"1px solid rgba(255,255,255,0.07)" }}>
-              <div style={{ display:"flex", alignItems:"center", gap:"6px", marginBottom:"6px" }}>
-                <div style={{ width:"7px", height:"7px", borderRadius:"50%", background:"#3ddc84", animation:"wtpulse 1.4s infinite" }}/>
-                <span style={{ fontSize:"12px", color:"#3ddc84", fontWeight:600 }}>{wtPeers} viewer{wtPeers!==1?"s":""}</span>
-              </div>
-              {wtRoomVideo && (
-                <div style={{ fontSize:"11px", color:"rgba(255,255,255,0.45)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
-                  ▶ {wtRoomVideo.title}
+            {/* Viewers list */}
+            <div style={{ padding:"10px 14px", borderBottom:"1px solid rgba(255,255,255,0.07)", flexShrink:0 }}>
+              <div style={{ fontSize:"9px", color:"rgba(255,255,255,0.25)", letterSpacing:"0.08em", marginBottom:"6px" }}>VIEWERS — {wtPeers}</div>
+              <div style={{ display:"flex", flexWrap:"wrap", gap:"5px" }}>
+                {/* Self first */}
+                <div style={{ display:"flex", alignItems:"center", gap:"4px", background:"rgba(229,9,20,0.1)", border:"1px solid rgba(229,9,20,0.2)", borderRadius:"20px", padding:"2px 9px" }}>
+                  <div style={{ width:"5px", height:"5px", borderRadius:"50%", background:"#3ddc84" }}/>
+                  <span style={{ fontSize:"11px", color:"#fff" }}>{wtNickname||"You"} {wtIsHost?"👑":""}</span>
                 </div>
-              )}
+                {wtViewers.filter(v => v.nickname !== (wtNickname||"You")).map((v,i) => (
+                  <div key={i} style={{ display:"flex", alignItems:"center", gap:"4px", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.08)", borderRadius:"20px", padding:"2px 9px" }}>
+                    <div style={{ width:"5px", height:"5px", borderRadius:"50%", background:"#3ddc84" }}/>
+                    <span style={{ fontSize:"11px", color:"rgba(255,255,255,0.7)" }}>{v.nickname} {v.isHost?"👑":""}</span>
+                  </div>
+                ))}
+              </div>
             </div>
 
-            {/* Activity */}
-            <div style={{ padding:"10px 16px", borderBottom:"1px solid rgba(255,255,255,0.07)", minHeight:"80px" }}>
-              <div style={{ fontSize:"10px", color:"rgba(255,255,255,0.25)", letterSpacing:"0.08em", marginBottom:"6px" }}>ACTIVITY</div>
-              {wtLog.length === 0
-                ? <div style={{ fontSize:"11px", color:"rgba(255,255,255,0.2)" }}>No activity yet</div>
-                : wtLog.map((l,i) => (
-                  <div key={i} style={{ fontSize:"11px", lineHeight:1.9, color: i===wtLog.length-1 ? "rgba(255,255,255,0.75)" : "rgba(255,255,255,0.3)" }}>{l}</div>
-                ))
-              }
-            </div>
-
-            {/* Open file (host) */}
+            {/* Host controls */}
             {wtIsHost && (
-              <div style={{ padding:"10px 16px", borderBottom:"1px solid rgba(255,255,255,0.07)" }}>
-                <button onClick={openFilePicker}
-                  style={{ width:"100%", padding:"9px", background:"rgba(229,9,20,0.1)", border:"1px solid rgba(229,9,20,0.25)", color:"#e50914", borderRadius:"8px", cursor:"pointer", fontSize:"12px", fontWeight:700 }}>
-                  📂 Open File…
-                </button>
+              <div style={{ padding:"8px 14px", borderBottom:"1px solid rgba(255,255,255,0.07)", flexShrink:0 }}>
+                <div style={{ display:"flex", gap:"6px", marginBottom:"6px" }}>
+                  <button onClick={openFilePicker}
+                    style={{ flex:1, padding:"7px", background:"rgba(229,9,20,0.1)", border:"1px solid rgba(229,9,20,0.25)", color:"#e50914", borderRadius:"7px", cursor:"pointer", fontSize:"11px", fontWeight:700 }}>
+                    📂 File
+                  </button>
+                  <button onClick={() => setShowNetUrl(s => !s)}
+                    style={{ flex:1, padding:"7px", background:showNetUrl?"rgba(59,130,246,0.15)":"rgba(255,255,255,0.06)", border:`1px solid ${showNetUrl?"rgba(59,130,246,0.3)":"rgba(255,255,255,0.1)"}`, color:showNetUrl?"#60a5fa":"rgba(255,255,255,0.6)", borderRadius:"7px", cursor:"pointer", fontSize:"11px", fontWeight:700 }}>
+                    🌐 URL
+                  </button>
+                </div>
+                {showNetUrl && (
+                  <div style={{ marginBottom:"8px", padding:"10px", background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.08)", borderRadius:"8px" }}>
+                    <input type="text" placeholder="https://… (MP4, M3U8…)" value={netUrl}
+                      onChange={e => setNetUrl(e.target.value)}
+                      onKeyDown={e => e.key==="Enter" && watchNetInRoom()}
+                      style={{ width:"100%", background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.1)", color:"#fff", borderRadius:"6px", padding:"7px 9px", fontSize:"11px", outline:"none", boxSizing:"border-box", marginBottom:"6px" }}/>
+                    <input type="text" placeholder="Title (optional)" value={netTitle}
+                      onChange={e => setNetTitle(e.target.value)}
+                      onKeyDown={e => e.key==="Enter" && watchNetInRoom()}
+                      style={{ width:"100%", background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.1)", color:"#fff", borderRadius:"6px", padding:"7px 9px", fontSize:"11px", outline:"none", boxSizing:"border-box", marginBottom:"7px" }}/>
+                    <button onClick={watchNetInRoom}
+                      style={{ width:"100%", padding:"7px", background:"rgba(59,130,246,0.15)", border:"1px solid rgba(59,130,246,0.3)", color:"#60a5fa", borderRadius:"6px", cursor:"pointer", fontSize:"11px", fontWeight:700 }}>
+                      ▶ Stream to Room
+                    </button>
+                  </div>
+                )}
+                <div style={{ fontSize:"9px", color:"rgba(255,255,255,0.25)", letterSpacing:"0.07em", marginBottom:"5px" }}>LIBRARY</div>
+                <div style={{ maxHeight:"100px", overflowY:"auto" }}>
+                  {videos.filter(v => !v.isAudio).map((v,i) => (
+                    <div key={v.id||i} onClick={() => pickVideo(v)}
+                      style={{ fontSize:"11px", color:wtRoomVideo?.file_path===v.file_path?"#e50914":"rgba(255,255,255,0.6)", padding:"4px 6px", borderRadius:"5px", cursor:"pointer", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", background:wtRoomVideo?.file_path===v.file_path?"rgba(229,9,20,0.1)":"transparent" }}>
+                      🎬 {v.title}
+                    </div>
+                  ))}
+                  {videos.filter(v=>!v.isAudio).length===0 && <div style={{ fontSize:"10px", color:"rgba(255,255,255,0.2)" }}>Open a folder from Home first</div>}
+                </div>
               </div>
             )}
 
-            {/* Library picker */}
-            <div style={{ flex:1, overflowY:"auto", padding:"10px 16px" }}>
-              <div style={{ fontSize:"10px", color:"rgba(255,255,255,0.25)", letterSpacing:"0.08em", marginBottom:"8px" }}>
-                {wtIsHost ? "LIBRARY — click to play" : "LIBRARY (host controls)"}
-              </div>
-              {videos.length === 0 ? (
-                <div style={{ fontSize:"11px", color:"rgba(255,255,255,0.2)", lineHeight:1.7 }}>
-                  No videos loaded.<br/>Open a folder from Home first.
-                </div>
-              ) : videos.filter(v => !v.isAudio).map((v,i) => (
-                <div key={v.id||i}
-                  onClick={() => wtIsHost && pickVideo(v)}
-                  style={{
-                    display:"flex", alignItems:"center", gap:"8px",
-                    padding:"7px 8px", borderRadius:"7px", marginBottom:"2px",
-                    cursor: wtIsHost ? "pointer" : "default",
-                    background: wtRoomVideo?.file_path===v.file_path ? "rgba(229,9,20,0.12)" : "transparent",
-                    border:`1px solid ${wtRoomVideo?.file_path===v.file_path?"rgba(229,9,20,0.3)":"transparent"}`,
-                    transition:"all 0.12s",
-                  }}
-                  onMouseEnter={e => { if(wtIsHost) e.currentTarget.style.background="rgba(255,255,255,0.05)"; }}
-                  onMouseLeave={e => { if(wtRoomVideo?.file_path!==v.file_path) e.currentTarget.style.background="transparent"; }}
-                >
-                  {v.thumbnail
-                    ? <img src={v.thumbnail} alt="" style={{ width:"44px",height:"28px",borderRadius:"4px",objectFit:"cover",flexShrink:0 }}/>
-                    : <div style={{ width:"44px",height:"28px",borderRadius:"4px",background:"rgba(255,255,255,0.06)",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"12px" }}>🎬</div>
-                  }
-                  <div style={{ minWidth:0 }}>
-                    <div style={{ fontSize:"11px",fontWeight:wtRoomVideo?.file_path===v.file_path?600:400,color:wtRoomVideo?.file_path===v.file_path?"#fff":"rgba(255,255,255,0.65)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>
-                      {v.title}
+            {/* Chat messages */}
+            {showChat && (
+              <>
+                <div style={{ flex:1, overflowY:"auto", padding:"8px 14px", display:"flex", flexDirection:"column", gap:"6px" }}>
+                  {wtMessages.length === 0 && (
+                    <div style={{ fontSize:"11px", color:"rgba(255,255,255,0.2)", textAlign:"center", marginTop:"20px" }}>
+                      No messages yet.<br/>Say hi! 👋
                     </div>
-                    <div style={{ fontSize:"10px",color:"rgba(255,255,255,0.3)" }}>{fmtTime(v.duration)}</div>
-                  </div>
+                  )}
+                  {wtMessages.map((m,i) => (
+                    <div key={i} style={{ display:"flex", flexDirection:"column", alignItems:m.self?"flex-end":"flex-start" }}>
+                      <div style={{ fontSize:"9px", color:"rgba(255,255,255,0.3)", marginBottom:"2px", paddingLeft:"4px", paddingRight:"4px" }}>
+                        {m.self ? "You" : m.nickname} · {fmtTs(m.ts)}
+                      </div>
+                      <div style={{
+                        maxWidth:"85%", padding:"7px 11px", borderRadius:"12px",
+                        borderBottomRightRadius: m.self ? "3px" : "12px",
+                        borderBottomLeftRadius:  m.self ? "12px" : "3px",
+                        background: m.self ? "rgba(229,9,20,0.2)" : "rgba(255,255,255,0.07)",
+                        border: `1px solid ${m.self ? "rgba(229,9,20,0.3)" : "rgba(255,255,255,0.08)"}`,
+                        fontSize:"12px", color:"#fff", lineHeight:1.5, wordBreak:"break-word",
+                      }}>
+                        {m.text}
+                      </div>
+                    </div>
+                  ))}
+                  <div ref={chatEndRef}/>
                 </div>
-              ))}
-            </div>
+
+                {/* Chat input */}
+                <div style={{ padding:"10px 14px", borderTop:"1px solid rgba(255,255,255,0.07)", flexShrink:0, display:"flex", gap:"6px" }}>
+                  <input
+                    type="text" placeholder="Message…" value={chatInput}
+                    onChange={e => setChatInput(e.target.value)}
+                    onKeyDown={e => { if(e.key==="Enter" && !e.shiftKey) { e.preventDefault(); sendChat(); } }}
+                    maxLength={500}
+                    style={{ flex:1, background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.1)", color:"#fff", borderRadius:"8px", padding:"8px 10px", fontSize:"12px", outline:"none" }}
+                  />
+                  <button onClick={sendChat}
+                    style={{ padding:"8px 12px", background:"rgba(229,9,20,0.15)", border:"1px solid rgba(229,9,20,0.3)", color:"#e50914", borderRadius:"8px", cursor:"pointer", fontSize:"14px", flexShrink:0 }}>
+                    ➤
+                  </button>
+                </div>
+              </>
+            )}
+
+            {/* Activity log (when chat hidden) */}
+            {!showChat && (
+              <div style={{ flex:1, overflowY:"auto", padding:"10px 14px" }}>
+                <div style={{ fontSize:"9px", color:"rgba(255,255,255,0.25)", letterSpacing:"0.07em", marginBottom:"6px" }}>ACTIVITY</div>
+                {wtLog.map((l,i) => <div key={i} style={{ fontSize:"11px", color:i===wtLog.length-1?"rgba(255,255,255,0.7)":"rgba(255,255,255,0.3)", lineHeight:1.9 }}>{l}</div>)}
+              </div>
+            )}
           </div>
         </div>
       )}

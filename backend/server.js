@@ -370,6 +370,46 @@ app.get("/api/stream/:filename", (req, res) => {
   fs.createReadStream(filePath, { start, end }).pipe(res);
 });
 
+
+// ─── Stream by full path (used by Watch Together) ─────────────────
+// Simpler than /api/stream/:filename — takes full file_path as query param
+// avoiding double-encoding issues with Windows backslash paths
+app.get("/api/stream-file", (req, res) => {
+  const filePath = req.query.path;
+  if (!filePath || !fs.existsSync(filePath)) {
+    return res.status(404).send("File not found: " + filePath);
+  }
+  const stat = fs.statSync(filePath);
+  const ext  = path.extname(filePath).toLowerCase();
+  const MIME = {
+    ".mp4": "video/mp4", ".mkv": "video/x-matroska",
+    ".avi": "video/x-msvideo", ".mov": "video/quicktime",
+    ".webm": "video/webm", ".m4v": "video/mp4", ".flv": "video/x-flv",
+  };
+  const contentType = MIME[ext] || "video/mp4";
+  const range = req.headers.range;
+
+  if (!range) {
+    res.writeHead(200, {
+      "Content-Length": stat.size,
+      "Content-Type": contentType,
+      "Accept-Ranges": "bytes",
+    });
+    fs.createReadStream(filePath).pipe(res);
+    return;
+  }
+  const [s, e] = range.replace(/bytes=/, "").split("-");
+  const start  = parseInt(s, 10);
+  const end    = e ? parseInt(e, 10) : stat.size - 1;
+  res.writeHead(206, {
+    "Content-Range":  `bytes ${start}-${end}/${stat.size}`,
+    "Accept-Ranges":  "bytes",
+    "Content-Length": end - start + 1,
+    "Content-Type":   contentType,
+  });
+  fs.createReadStream(filePath, { start, end }).pipe(res);
+});
+
 // ─── Network URL proxy (avoid CORS issues) ────────────────────────
 app.get("/api/proxy-stream", async (req, res) => {
   const { url } = req.query;
@@ -619,30 +659,28 @@ app.get("/api/yt/stream-url", (req, res) => {
 
 
 // ─── Watch Together — WebSocket Room Server ────────────────────────
-// Rooms: Map<roomId, Set<WebSocket>>
-// Each message: { type, roomId, ...payload }
-// Types: join | leave | play | pause | seek | video | ping | peers
+// Message types: join|chat|play|pause|seek|video|state|ping|peers|user-joined|user-left
 
 const { WebSocketServer } = require("ws");
-const rooms = new Map(); // roomId → Set of ws clients
+
+// rooms: Map<roomId, Map<ws, { nickname, isHost }>>
+const rooms = new Map();
 
 function broadcast(roomId, msg, exclude = null) {
   const room = rooms.get(roomId);
   if (!room) return;
   const data = JSON.stringify(msg);
-  for (const client of room) {
-    if (client !== exclude && client.readyState === 1) {
-      client.send(data);
-    }
+  for (const [client] of room) {
+    if (client !== exclude && client.readyState === 1) client.send(data);
   }
 }
 
-function sendPeerCount(roomId) {
-  const count = rooms.get(roomId)?.size || 0;
+function sendRoomInfo(roomId) {
   const room = rooms.get(roomId);
   if (!room) return;
-  const data = JSON.stringify({ type: "peers", count });
-  for (const client of room) {
+  const viewers = [...room.values()].map(u => ({ nickname: u.nickname, isHost: u.isHost }));
+  const data = JSON.stringify({ type: "room-info", count: room.size, viewers });
+  for (const [client] of room) {
     if (client.readyState === 1) client.send(data);
   }
 }
@@ -656,41 +694,60 @@ const wss = new WebSocketServer({ server });
 
 wss.on("connection", (ws) => {
   let currentRoom = null;
+  let myNickname  = "Viewer";
+  let myIsHost    = false;
 
   ws.on("message", (raw) => {
     let msg;
     try { msg = JSON.parse(raw); } catch { return; }
-    const { type, roomId } = msg;
+    const { type, roomId, nickname } = msg;
 
     if (type === "join") {
-      // Leave old room if switching
+      // Leave previous room cleanly
       if (currentRoom && currentRoom !== roomId) {
         rooms.get(currentRoom)?.delete(ws);
-        sendPeerCount(currentRoom);
+        broadcast(currentRoom, { type: "user-left", nickname: myNickname });
+        sendRoomInfo(currentRoom);
         if (rooms.get(currentRoom)?.size === 0) rooms.delete(currentRoom);
       }
 
       currentRoom = roomId;
-      if (!rooms.has(roomId)) rooms.set(roomId, new Set());
-      rooms.get(roomId).add(ws);
+      myNickname  = (nickname || "Viewer").slice(0, 24);
+      myIsHost    = !rooms.has(roomId) || rooms.get(roomId).size === 0;
 
-      // Send current state to the newcomer if host exists
-      ws.send(JSON.stringify({ type: "joined", roomId }));
-      sendPeerCount(roomId);
+      if (!rooms.has(roomId)) rooms.set(roomId, new Map());
+      rooms.get(roomId).set(ws, { nickname: myNickname, isHost: myIsHost });
 
-      // Ask host (first peer) to send current video state to new joiner
-      const room = rooms.get(roomId);
-      if (room.size > 1) {
-        const host = [...room][0];
-        if (host !== ws && host.readyState === 1) {
-          host.send(JSON.stringify({ type: "state-request" }));
+      ws.send(JSON.stringify({ type: "joined", roomId, isHost: myIsHost, nickname: myNickname }));
+      broadcast(roomId, { type: "user-joined", nickname: myNickname, isHost: myIsHost }, ws);
+      sendRoomInfo(roomId);
+
+      // Ask host to send state to the new joiner
+      if (!myIsHost) {
+        const room = rooms.get(roomId);
+        for (const [client, info] of room) {
+          if (client !== ws && info.isHost && client.readyState === 1) {
+            client.send(JSON.stringify({ type: "state-request", toNickname: myNickname }));
+            break;
+          }
         }
       }
     }
 
-    else if (type === "play" || type === "pause" || type === "seek" || type === "video" || type === "state") {
-      // Relay to everyone else in the room
-      if (currentRoom) broadcast(currentRoom, msg, ws);
+    else if (type === "chat") {
+      // Broadcast chat message with sender nickname + timestamp
+      if (currentRoom) {
+        broadcast(currentRoom, {
+          type: "chat",
+          nickname: myNickname,
+          text: (msg.text || "").slice(0, 500),
+          ts: Date.now(),
+        }, ws); // exclude = ws so sender gets it back via optimistic UI
+      }
+    }
+
+    else if (["play","pause","seek","video","state"].includes(type)) {
+      if (currentRoom) broadcast(currentRoom, { ...msg, nickname: myNickname }, ws);
     }
 
     else if (type === "ping") {
@@ -701,7 +758,8 @@ wss.on("connection", (ws) => {
   ws.on("close", () => {
     if (!currentRoom) return;
     rooms.get(currentRoom)?.delete(ws);
-    sendPeerCount(currentRoom);
+    broadcast(currentRoom, { type: "user-left", nickname: myNickname });
+    sendRoomInfo(currentRoom);
     if (rooms.get(currentRoom)?.size === 0) rooms.delete(currentRoom);
     currentRoom = null;
   });
@@ -709,7 +767,7 @@ wss.on("connection", (ws) => {
   ws.on("error", () => {
     if (currentRoom) {
       rooms.get(currentRoom)?.delete(ws);
-      sendPeerCount(currentRoom);
+      sendRoomInfo(currentRoom);
     }
   });
 });

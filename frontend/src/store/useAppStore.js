@@ -103,7 +103,16 @@ export const useAppStore = create(
       setWtRoomVideo: (v) => set({ wtRoomVideo: v }),
       setWtStatus:    (v) => set({ wtStatus: v }),
       addWtLog:    (msg) => set(s => ({ wtLog: [...s.wtLog.slice(-8), msg] })),
-      resetWt:     ()    => set({ wtRoomId: null, wtJoined: false, wtPeers: 0, wtIsHost: false, wtRoomVideo: null, wtLog: [], wtStatus: "idle" }),
+      resetWt:     ()    => set({ wtRoomId: null, wtJoined: false, wtPeers: 0, wtIsHost: false, wtRoomVideo: null, wtLog: [], wtStatus: "idle", wtViewers: [], wtMessages: [] }),
+
+      // Chat + nicknames
+      wtNickname:  localStorage.getItem("ns_wt_nickname") || "",
+      wtViewers:   [],    // [{ nickname, isHost }]
+      wtMessages:  [],    // [{ nickname, text, ts, self }]
+      setWtNickname: (n) => { localStorage.setItem("ns_wt_nickname", n); set({ wtNickname: n }); },
+      setWtViewers:  (v) => set({ wtViewers: v }),
+      addWtMessage:  (m) => set(s => ({ wtMessages: [...s.wtMessages.slice(-200), m] })),
+      clearWtMessages: () => set({ wtMessages: [] }),
 
 
       // ── Setters ────────────────────────────────────────────────

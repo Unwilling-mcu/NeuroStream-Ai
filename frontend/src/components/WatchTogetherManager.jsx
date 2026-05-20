@@ -9,9 +9,10 @@ export const wtWsRef = { current: null }; // shared ref so WatchTogether UI can 
 export default function WatchTogetherManager() {
   const {
     videos,
-    wtJoined, wtRoomId, wtIsHost,
+    wtJoined, wtRoomId, wtIsHost, wtNickname,
     setWtJoined, setWtPeers, setWtRoomId, setWtRoomVideo,
     setWtStatus, addWtLog, resetWt,
+    setWtViewers, addWtMessage, clearWtMessages, setWtIsHost,
   } = useAppStore();
 
   const videoElRef  = useRef(null);
@@ -32,7 +33,8 @@ export default function WatchTogetherManager() {
       wtWsRef.current = ws;
 
       ws.onopen = () => {
-        ws.send(JSON.stringify({ type: "join", roomId }));
+        const nick = useAppStore.getState().wtNickname || "Viewer";
+        ws.send(JSON.stringify({ type: "join", roomId, nickname: nick }));
         pingRef.current = setInterval(() => {
           if (ws.readyState === 1) ws.send(JSON.stringify({ type: "ping" }));
         }, 25000);
@@ -44,9 +46,24 @@ export default function WatchTogetherManager() {
 
         if (msg.type === "joined") {
           setWtJoined(true); setWtStatus("connected"); setWtRoomId(roomId);
-          addWtLog(asHost ? "🎬 Room created — you are the host" : "✅ Joined room");
+          setWtIsHost(msg.isHost);
+          clearWtMessages();
+          addWtLog(msg.isHost ? "🎬 Room created — you are the host" : "✅ Joined room");
         }
         if (msg.type === "peers") setWtPeers(msg.count);
+        if (msg.type === "room-info") {
+          setWtPeers(msg.count);
+          setWtViewers(msg.viewers || []);
+        }
+        if (msg.type === "user-joined") {
+          addWtLog("👋 " + msg.nickname + " joined");
+        }
+        if (msg.type === "user-left") {
+          addWtLog("👋 " + msg.nickname + " left");
+        }
+        if (msg.type === "chat") {
+          addWtMessage({ nickname: msg.nickname, text: msg.text, ts: msg.ts, self: false });
+        }
 
         if (msg.type === "state-request") {
           const cur = useAppStore.getState();
@@ -62,20 +79,43 @@ export default function WatchTogetherManager() {
         }
 
         if (msg.type === "state" || msg.type === "video") {
-          if (msg.videoPath) {
+          if (msg.videoPath || msg.streamUrl) {
+            // Build a room video object the viewer can actually stream
             const match = videosRef.current.find(vv => vv.file_path === msg.videoPath);
-            if (match) {
-              setWtRoomVideo(match);
-              addWtLog("📡 " + (msg.type === "video" ? "Host changed: " : "Synced: ") + match.title);
-              if (msg.type === "state" && v) {
-                setTimeout(() => {
-                  ignoreRef.current = true;
-                  if (Math.abs(v.currentTime - (msg.time||0)) > 1) v.currentTime = msg.time || 0;
-                  if (!msg.paused) v.play(); else v.pause();
-                  setTimeout(() => { ignoreRef.current = false; }, 400);
-                }, 600);
+            // Use streamUrl from host (HTTP) — works in both Electron and Chrome tabs
+            // Use stream-file endpoint with full path — avoids double-encoding
+            const streamUrl = msg.streamUrl || (msg.videoPath
+              ? `http://localhost:5000/api/stream-file?path=${encodeURIComponent(msg.videoPath)}`
+              : null);
+
+            const roomVideo = match
+              ? { ...match, streamUrl }
+              : { id: Date.now(), title: msg.title || "Shared video", file_path: msg.videoPath, url: streamUrl, streamUrl };
+
+            setWtRoomVideo(roomVideo);
+            addWtLog("📡 " + (msg.type === "video" ? "Host: " : "Synced: ") + roomVideo.title);
+
+            // Wait for the wt-video element to mount (React needs a render cycle)
+            const applySync = (attempt = 0) => {
+              const el = document.getElementById("wt-video");
+              if (!el && attempt < 20) { setTimeout(() => applySync(attempt+1), 200); return; }
+              if (!el) return;
+              // Set src if not already set to this stream
+              if (streamUrl && !el.src.includes(encodeURIComponent(msg.videoPath?.split(/[\/]/).pop() || ""))) {
+                el.src = streamUrl;
               }
-            }
+              if (msg.type === "state") {
+                ignoreRef.current = true;
+                el.currentTime = msg.time || 0;
+                if (!msg.paused) el.play().catch(()=>{}); else el.pause();
+                setTimeout(() => { ignoreRef.current = false; }, 500);
+              } else {
+                el.currentTime = 0;
+                el.play().catch(()=>{});
+              }
+            };
+            setTimeout(() => applySync(), 300);
+
           } else if (v && msg.type === "state") {
             ignoreRef.current = true;
             if (Math.abs(v.currentTime - (msg.time||0)) > 1) v.currentTime = msg.time || 0;
@@ -106,6 +146,7 @@ export default function WatchTogetherManager() {
       ws.onclose = () => {
         clearInterval(pingRef.current);
         resetWt();
+        setWtViewers([]);
         wtWsRef.current = null;
       };
       ws.onerror = () => { setWtStatus("error"); };
